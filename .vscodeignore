@@ -10,3 +10,7 @@ tsconfig*.json
 .mocharc.json
 .eslintrc*
 **/*.map
+# The shipped artifact is the bundled dist/extension.js, so no TypeScript
+# should ever be packaged. The src/ and test/ rules cover today's layout;
+# this catches a stray .ts added at the root later.
+**/*.ts
