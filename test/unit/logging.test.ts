@@ -68,4 +68,33 @@ describe('redactSecrets', () => {
     assert.equal(redactSecrets('ACCESS_TOKEN=abc123'), 'ACCESS_TOKEN=REDACTED')
     assert.equal(redactSecrets('bearer abc.def'), 'bearer REDACTED')
   })
+
+  it('redacts a JSON-shaped access_token value and keeps the structure intact', () => {
+    assert.equal(
+      redactSecrets('{"access_token":"abc123"}'),
+      '{"access_token":"REDACTED"}',
+    )
+  })
+
+  it('redacts only the token value in JSON, leaving sibling fields untouched', () => {
+    assert.equal(
+      redactSecrets('{"token": "abc", "count": 3}'),
+      '{"token": "REDACTED", "count": 3}',
+    )
+  })
+
+  it('redacts a non-Bearer Authorization scheme, keeping the scheme visible', () => {
+    assert.equal(
+      redactSecrets('Authorization: Basic dXNlcjpwdw=='),
+      'Authorization: Basic REDACTED',
+    )
+  })
+
+  it('still redacts Bearer via the Authorization-header path', () => {
+    assert.equal(redactSecrets('Authorization: Bearer abc.def'), 'Authorization: Bearer REDACTED')
+  })
+
+  it('does not trigger on the word token in ordinary prose with no separator', () => {
+    assert.equal(redactSecrets('the token is missing'), 'the token is missing')
+  })
 })

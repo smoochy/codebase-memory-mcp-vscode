@@ -21,6 +21,12 @@ export function shouldRotate(
 /** Strip credentials that could otherwise reach a log the user pastes into an issue. */
 export function redactSecrets(message: string): string {
   return message
-    .replace(/((?:access_token|token|api_key)=)[^\s&"']+/gi, '$1REDACTED')
+    // key=value or JSON "key":"value" / "key": value, quoted or bare, either separator.
+    .replace(
+      /((?:access_token|token|api_key)"?\s*(?:=|:)\s*"?)[^\s&"']+/gi,
+      '$1REDACTED',
+    )
     .replace(/(Bearer\s+)[^\s"']+/gi, '$1REDACTED')
+    // Any Authorization scheme other than Bearer (already handled above).
+    .replace(/(Authorization:\s*(?!Bearer\s)\S+\s+)\S+/gi, '$1REDACTED')
 }
