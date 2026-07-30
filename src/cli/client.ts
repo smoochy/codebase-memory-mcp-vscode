@@ -66,21 +66,20 @@ export class CliClient {
   }
 
   async indexStatus(project: string): Promise<CliResult<IndexStatus>> {
-    return this.json<IndexStatus>(['cli', 'index_status', '--project', project, '--json'])
+    return this.json<IndexStatus>(['cli', 'index_status', `--project=${project}`, '--json'])
   }
 
   async addProject(path: string): Promise<CliResult<unknown>> {
     return this.json<unknown>([
       'cli',
       'index_repository',
-      '--path',
-      normalizeProjectPath(path),
+      `--path=${normalizeProjectPath(path)}`,
       '--json',
     ])
   }
 
   async removeProject(name: string): Promise<CliResult<unknown>> {
-    return this.json<unknown>(['cli', 'delete_project', '--project', name, '--json'])
+    return this.json<unknown>(['cli', 'delete_project', `--project=${name}`, '--json'])
   }
 
   async version(): Promise<CliResult<string>> {

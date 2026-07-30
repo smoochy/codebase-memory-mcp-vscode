@@ -62,7 +62,36 @@ describe('CliClient', () => {
   it('normalizes a Windows path before adding a project', async () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('d:\\Repos\\App')
-    assert.ok(calls[0]?.args.includes('D:/Repos/App'))
+    assert.ok(calls[0]?.args.includes('--path=D:/Repos/App'))
+  })
+
+  // A project name comes from the CLI's own JSON, which is filled from indexed
+  // repositories. Passed as a separate argv element, a name starting with `--`
+  // would be read by the CLI's flag parser as an option of its own. Binding the
+  // value to its flag with `=` keeps it a value whatever the name looks like.
+  it('binds a project name to its flag so a --name cannot become a flag', async () => {
+    const calls: Array<{ command: string; args: string[] }> = []
+    const client = new CliClient(BIN, stubRunner({ stdout: '{}' }, calls))
+    await client.removeProject('--config=/tmp/evil')
+    assert.deepEqual(calls[0]?.args, [
+      'cli',
+      'delete_project',
+      '--project=--config=/tmp/evil',
+      '--json',
+    ])
+    assert.ok(!calls[0]?.args.includes('--config=/tmp/evil'))
+  })
+
+  it('binds the index_status project the same way', async () => {
+    const calls: Array<{ command: string; args: string[] }> = []
+    await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).indexStatus('--help')
+    assert.deepEqual(calls[0]?.args, ['cli', 'index_status', '--project=--help', '--json'])
+  })
+
+  it('binds a path that looks like a flag when adding a project', async () => {
+    const calls: Array<{ command: string; args: string[] }> = []
+    await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('--exclude=x')
+    assert.deepEqual(calls[0]?.args, ['cli', 'index_repository', '--path=--exclude=x', '--json'])
   })
 
   it('prefers the structured CLI error over stderr when both are present', async () => {

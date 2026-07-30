@@ -47,6 +47,13 @@ export function readTextOrNull(path: string): string | null {
 }
 
 /**
+ * How much of a stream is kept. A child that writes without bound would
+ * otherwise grow the extension host's heap until it dies. Truncating only ever
+ * happens in that runaway case, where the output is unusable anyway.
+ */
+export const MAX_CAPTURED_OUTPUT = 8 * 1024 * 1024
+
+/**
  * Spawn without a shell, so no argument can be reinterpreted as shell syntax.
  * The child is killed on timeout rather than left hanging.
  */
@@ -66,10 +73,14 @@ export const runProcess: Runner = (command, args, timeoutMs) =>
     }, timeoutMs)
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8')
+      if (stdout.length < MAX_CAPTURED_OUTPUT) {
+        stdout += chunk.toString('utf8')
+      }
     })
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8')
+      if (stderr.length < MAX_CAPTURED_OUTPUT) {
+        stderr += chunk.toString('utf8')
+      }
     })
     child.on('error', (cause) => {
       clearTimeout(timer)
