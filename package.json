@@ -1,0 +1,38 @@
+{
+  "name": "better-codebase-memory-mcp",
+  "displayName": "Better Codebase Memory MCP",
+  "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
+  "version": "0.1.0",
+  "publisher": "smoochy",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "compile:test": "tsc -p tsconfig.test.json",
+    "test:unit": "npm run compile:test && mocha",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "mocha": "^10.7.0",
+    "typescript": "^5.6.0"
+  },
+  "contributes": {},
+  "allowScripts": {
+    "esbuild@0.24.2": true,
+    "@vscode/vsce-sign@2.0.9": true
+  }
+}
