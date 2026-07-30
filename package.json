@@ -12,6 +12,7 @@
     "Other"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": ["onView:betterCmm.panel"],
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
@@ -30,7 +31,74 @@
     "mocha": "^10.7.0",
     "typescript": "^5.6.0"
   },
-  "contributes": {},
+  "contributes": {
+    "commands": [
+      { "command": "betterCmm.runSetup", "title": "Run Setup", "category": "Codebase Memory" },
+      { "command": "betterCmm.installCli", "title": "Register MCP Server", "category": "Codebase Memory" },
+      { "command": "betterCmm.copyInstallCommand", "title": "Copy Install Command", "category": "Codebase Memory" },
+      { "command": "betterCmm.copyUninstallCommand", "title": "Copy Uninstall Command", "category": "Codebase Memory" },
+      { "command": "betterCmm.updateBinary", "title": "Update Binary", "category": "Codebase Memory" },
+      { "command": "betterCmm.addProject", "title": "Add Repositories", "category": "Codebase Memory" },
+      { "command": "betterCmm.removeProject", "title": "Remove Project", "category": "Codebase Memory" },
+      { "command": "betterCmm.refresh", "title": "Refresh", "category": "Codebase Memory" },
+      { "command": "betterCmm.showLogs", "title": "Show Logs", "category": "Codebase Memory" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "betterCmm",
+          "title": "Codebase Memory",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "betterCmm": [{ "id": "betterCmm.panel", "name": "Codebase Memory", "type": "webview" }]
+    },
+    "configuration": {
+      "title": "Better Codebase Memory MCP",
+      "properties": {
+        "betterCmm.binarySource": {
+          "type": "string",
+          "enum": ["auto", "managed", "external"],
+          "enumDescriptions": [
+            "Use an existing installation when one is found, otherwise the managed binary.",
+            "Always use the binary this extension downloads and updates.",
+            "Always use an installation you manage yourself. The extension never modifies it."
+          ],
+          "default": "auto",
+          "description": "Which codebase-memory-mcp binary to use."
+        },
+        "betterCmm.externalBinaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to your own binary. Leave empty to search the usual locations."
+        },
+        "betterCmm.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Poll the CLI for project statistics while the panel is visible."
+        },
+        "betterCmm.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "description": "Seconds between statistics refreshes."
+        },
+        "betterCmm.checkForUpdates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check GitHub for a newer release of the managed binary on startup."
+        },
+        "betterCmm.logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info",
+          "description": "Verbosity of the extension log."
+        }
+      }
+    }
+  },
   "allowScripts": {
     "esbuild@0.24.2": true,
     "@vscode/vsce-sign@2.0.9": true
