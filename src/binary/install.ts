@@ -67,7 +67,15 @@ export function replaceBinary(
     ops.write(target, data)
   } catch (cause) {
     if (movedAside) {
-      ops.rename(backup, target)
+      try {
+        ops.rename(backup, target)
+      } catch (rollbackCause) {
+        throw new Error(
+          `install failed and the previous binary could not be restored; ` +
+            `it is still at ${backup} — restore it by hand (rollback error: ${String(rollbackCause)})`,
+          { cause },
+        )
+      }
     }
     throw cause
   }

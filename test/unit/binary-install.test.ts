@@ -97,6 +97,32 @@ describe('replaceBinary', () => {
     assert.ok(!ops.files.has('C:/bin/cmm.exe.old'))
   })
 
+  it('preserves the original write failure as the cause when the rollback also fails', () => {
+    const ops = memoryOps(['C:/bin/cmm.exe'])
+    const writeFails = new Error('EBUSY')
+    const doublyFailing: FileOps = {
+      ...ops,
+      write() {
+        throw writeFails
+      },
+      rename(from, to) {
+        if (from === 'C:/bin/cmm.exe.old') {
+          throw new Error('EPERM cannot restore')
+        }
+        ops.rename(from, to)
+      },
+    }
+    assert.throws(
+      () => replaceBinary('C:/bin/cmm.exe', DATA, 'win32', doublyFailing),
+      (err: unknown) => {
+        assert.ok(err instanceof Error)
+        assert.equal(err.cause, writeFails)
+        assert.match(err.message, /C:\/bin\/cmm\.exe\.old/)
+        return true
+      },
+    )
+  })
+
   it('clears a leftover .old file from an earlier interrupted update', () => {
     const ops = memoryOps(['C:/bin/cmm.exe', 'C:/bin/cmm.exe.old'])
     replaceBinary('C:/bin/cmm.exe', DATA, 'win32', ops)
