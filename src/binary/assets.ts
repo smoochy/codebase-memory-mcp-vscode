@@ -42,7 +42,7 @@ export function assetName(p: Platform, variant: Variant): string {
 
 /** Reject anything that could escape the release path when interpolated. */
 function assertPlainAssetName(asset: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(asset)) {
+  if (!/^[A-Za-z0-9._-]+$/.test(asset) || asset === '.' || asset === '..') {
     throw new Error(`invalid asset name: ${asset}`)
   }
 }

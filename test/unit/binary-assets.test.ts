@@ -82,6 +82,13 @@ describe('urls', () => {
     assert.throws(() => downloadUrl('v0.9.0', '../../evil'), /invalid asset name/i)
     assert.throws(() => downloadUrl('v0.9.0', 'a/b.zip'), /invalid asset name/i)
   })
+
+  it('rejects a bare "." or ".." as tag or asset', () => {
+    assert.throws(() => downloadUrl('v0.9.0', '.'), /invalid asset name/i)
+    assert.throws(() => downloadUrl('v0.9.0', '..'), /invalid asset name/i)
+    assert.throws(() => downloadUrl('.', 'x.zip'), /invalid asset name/i)
+    assert.throws(() => downloadUrl('..', 'x.zip'), /invalid asset name/i)
+  })
 })
 
 describe('tagFromLocation', () => {
