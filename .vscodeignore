@@ -1,4 +1,6 @@
 .vscode/**
+.worktrees/**
+.superpowers/**
 node_modules/**
 out/**
 src/**
@@ -6,4 +8,5 @@ test/**
 esbuild.mjs
 tsconfig*.json
 .mocharc.json
+.eslintrc*
 **/*.map
