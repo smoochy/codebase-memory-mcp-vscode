@@ -1,6 +1,16 @@
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import type { FileOps } from './binary/install'
+import type { InstallFileOps } from './binary/manager'
 import type { RunOutput, Runner } from './cli/client'
 
 /** Real filesystem behind the pure install logic. */
@@ -11,6 +21,20 @@ export const fileOps: FileOps = {
   remove: (p) => rmSync(p, { force: true }),
   chmod: (p, mode) => chmodSync(p, mode),
   mkdirp: (p) => mkdirSync(p, { recursive: true }),
+}
+
+/** Real filesystem behind the pure download/install orchestration. */
+export const installOps: InstallFileOps = {
+  ...fileOps,
+  listDir: (dir) => {
+    try {
+      return readdirSync(dir)
+    } catch {
+      return []
+    }
+  },
+  read: (p) => readFileSync(p),
+  removeDir: (p) => rmSync(p, { force: true, recursive: true }),
 }
 
 /** Read a file, returning null when it cannot be read. */

@@ -1,15 +1,20 @@
 import * as vscode from 'vscode'
-import { readTextOrNull, runProcess } from './adapters'
+import { installOps, readTextOrNull, runProcess } from './adapters'
+import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
+import { installLatest, installRelease, refusesManagedInstall } from './binary/manager'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, UNINSTALL_COMMAND } from './constants'
+import { redactSecrets } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
+import { wizardSteps } from './setup/wizard'
 import { computeState, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter } from 'node:path'
+import { resolveLatestTag } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
 
@@ -79,8 +84,96 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.update({ state, projects, version: null, updateAvailable: null })
   }
 
+  const log = (message: string): void => {
+    // Anything derived from a URL, header or process output goes through the
+    // redactor before it can land in a log the user pastes into an issue.
+    channel.appendLine(redactSecrets(message))
+  }
+
+  const fail = (what: string, cause: unknown): void => {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    log(`${what} failed: ${detail}`)
+    if (cause instanceof Error && cause.stack !== undefined) {
+      log(cause.stack)
+    }
+    void vscode.window.showErrorMessage(
+      `${what} failed: ${redactSecrets(detail)} — see the Better Codebase Memory MCP output for details.`,
+    )
+  }
+
+  /**
+   * The extension only ever touches an installation it owns. An `external`
+   * setting, or a state that resolved to an external binary, is refused here
+   * so no download path below can be reached at all.
+   */
+  const refuseIfExternal = (state: ExtensionState, what: string): boolean => {
+    if (refusesManagedInstall(setting<BinarySource>('binarySource', 'auto'), state)) {
+      log(`${what}: refused, the active binary is not managed by the extension`)
+      void vscode.window.showWarningMessage(
+        `${what} is only available for the managed binary. ` +
+          `The extension does not modify an installation it does not own.`,
+      )
+      return true
+    }
+    return false
+  }
+
+  const installDeps = (report: (message: string) => void) => ({
+    fetchImpl: (url: string, init: { redirect: 'manual' }) => fetch(url, init),
+    run: runProcess,
+    ops: installOps,
+    platform: process.platform,
+    arch: process.arch,
+    storageDir,
+    log,
+    onStep: report,
+  })
+
   const handlers: Record<(typeof COMMAND_IDS)[number], (arg?: string) => void | Promise<void>> = {
-    'betterCmm.runSetup': () => void vscode.commands.executeCommand('betterCmm.refresh'),
+    'betterCmm.runSetup': async () => {
+      const state = resolveState(storageDir)
+      if (refuseIfExternal(state, 'Setup')) {
+        return
+      }
+
+      const managed = managedBinaryPath(storageDir, process.platform)
+      if (existsSync(managed) && state.kind === 'ready-managed') {
+        // Already installed and registered — nothing to download.
+        await refresh()
+        return
+      }
+
+      // The wizard owns the user-facing step labels; the progress reporter
+      // simply walks them so the titles stay in one place.
+      const steps = wizardSteps(state, projects.length > 0)
+      const titleFor = (id: string, fallback: string): string =>
+        steps.find((s) => s.id === id)?.title ?? fallback
+
+      try {
+        const { tag } = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Better Codebase Memory MCP' },
+          async (progress) =>
+            installLatest(
+              installDeps((message) => {
+                const id =
+                  message.startsWith('Downloading') ? 'download-binary'
+                  : message.startsWith('Verifying') ? 'verify-binary'
+                  : 'register-mcp'
+                progress.report({ message: titleFor(id, message) })
+              }),
+            ),
+        )
+        log(`setup installed ${tag}`)
+        await refresh()
+        void vscode.window.showInformationMessage(
+          `codebase-memory-mcp ${tag} installed. ` +
+            `${titleFor('register-mcp', 'Register the MCP server')} is the next step — ` +
+            `run "Install CLI" so the CLI writes its own MCP entry.`,
+        )
+      } catch (cause) {
+        fail('Setup', cause)
+      }
+    },
     'betterCmm.installCli': async () => {
       const state = resolveState(storageDir)
       if (state.activePath === null || state.effectiveSource !== 'managed') {
@@ -99,7 +192,49 @@ export function activate(context: vscode.ExtensionContext): void {
         'Uninstall command copied. Run it in a terminal to remove codebase-memory-mcp itself.',
       )
     },
-    'betterCmm.updateBinary': () => void vscode.commands.executeCommand('betterCmm.refresh'),
+    'betterCmm.updateBinary': async () => {
+      const state = resolveState(storageDir)
+      if (refuseIfExternal(state, 'Update')) {
+        return
+      }
+      if (state.activePath === null) {
+        void vscode.window.showWarningMessage('No managed binary is installed yet. Run setup first.')
+        return
+      }
+
+      try {
+        const installed = await new CliClient(state.activePath, runProcess).version()
+        if (!installed.ok) {
+          throw new Error(`could not read the installed version: ${installed.error}`)
+        }
+
+        const latestTag = await resolveLatestTag((url, init) => fetch(url, init))
+
+        if (compareVersions(latestTag, installed.value) <= 0) {
+          void vscode.window.showInformationMessage(
+            `codebase-memory-mcp is already up to date (${installed.value}).`,
+          )
+          return
+        }
+
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Better Codebase Memory MCP' },
+          async (progress) =>
+            installRelease(
+              latestTag,
+              installDeps((message) => progress.report({ message })),
+            ),
+        )
+        log(`update installed ${latestTag} (was ${installed.value})`)
+        await refresh()
+        void vscode.window.showInformationMessage(
+          `codebase-memory-mcp updated to ${latestTag}. Restart the MCP server ` +
+            `(or reload the window) for the new binary to take effect.`,
+        )
+      } catch (cause) {
+        fail('Update', cause)
+      }
+    },
     'betterCmm.addProject': async () => {
       const picked = await vscode.window.showOpenDialog({
         canSelectFolders: true,
