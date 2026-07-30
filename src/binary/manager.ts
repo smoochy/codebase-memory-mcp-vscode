@@ -4,6 +4,7 @@ import { extractCommand, replaceBinary, type FileOps } from './install'
 import { managedBinaryPath } from './locate'
 import type { Runner } from '../cli/client'
 import type { BinarySource, ExtensionState } from '../state/machine'
+import type { WizardStepId } from '../setup/wizard'
 import { assertAllowedUrl } from './verify'
 
 /**
@@ -39,7 +40,8 @@ export interface InstallDeps {
   variant?: Variant
   /** Progress log sink. Callers redact before forwarding to a channel. */
   log?: (message: string) => void
-  onStep?: (message: string) => void
+  /** Reports the wizard step id currently in progress. Callers resolve it to a title. */
+  onStep?: (id: WizardStepId) => void
   extractTimeoutMs?: number
 }
 
@@ -91,7 +93,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
 
   const asset = assetName({ platform, arch }, deps.variant ?? 'standard')
 
-  step('Downloading the binary')
+  step('download-binary')
   // Fetch the published digests first. An unreachable, empty or malformed
   // checksums file must abort the install, never downgrade it to "unverified".
   const checksumsResponse = await followRedirects(
@@ -106,7 +108,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
   const url = assertAllowedUrl(downloadUrl(tag, asset)).toString()
   log(`downloading ${url}`)
 
-  step('Verifying the download')
+  step('verify-binary')
   const archiveBytes = await downloadVerified(url, asset, checksums, fetchImpl)
 
   // Everything below stays inside the extension's own global storage.
@@ -131,7 +133,8 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
     const extracted = findExtractedBinary(extractDir, platform, ops)
     const target = managedBinaryPath(storageDir, platform)
 
-    step('Installing the binary')
+    // No dedicated wizard step for this instant, in-process move; it is still
+    // covered by the 'verify-binary' step the user is looking at.
     replaceBinary(target, ops.read(extracted), platform, ops)
     log(`installed ${tag} at ${target}`)
     return target

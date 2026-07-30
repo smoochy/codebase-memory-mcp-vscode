@@ -2,14 +2,14 @@ import * as vscode from 'vscode'
 import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
-import { installLatest, installRelease, refusesManagedInstall } from './binary/manager'
+import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, UNINSTALL_COMMAND } from './constants'
 import { redactSecrets } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
-import { wizardSteps } from './setup/wizard'
+import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -118,8 +118,10 @@ export function activate(context: vscode.ExtensionContext): void {
     return false
   }
 
-  const installDeps = (report: (message: string) => void) => ({
-    fetchImpl: (url: string, init: { redirect: 'manual' }) => fetch(url, init),
+  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
+
+  const installDeps = (report: InstallDeps['onStep']) => ({
+    fetchImpl,
     run: runProcess,
     ops: installOps,
     platform: process.platform,
@@ -143,31 +145,24 @@ export function activate(context: vscode.ExtensionContext): void {
         return
       }
 
-      // The wizard owns the user-facing step labels; the progress reporter
-      // simply walks them so the titles stay in one place.
-      const steps = wizardSteps(state, projects.length > 0)
-      const titleFor = (id: string, fallback: string): string =>
-        steps.find((s) => s.id === id)?.title ?? fallback
+      // The wizard's own remaining-step list drives the notification title,
+      // so the flow the user sees is the same one wizardSteps computed.
+      const firstStep = wizardSteps(state, projects.length > 0)[0]
+      const title = firstStep === undefined ? 'Better Codebase Memory MCP' : firstStep.title
 
       try {
         const { tag } = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Better Codebase Memory MCP' },
+          { location: vscode.ProgressLocation.Notification, title },
           async (progress) =>
             installLatest(
-              installDeps((message) => {
-                const id =
-                  message.startsWith('Downloading') ? 'download-binary'
-                  : message.startsWith('Verifying') ? 'verify-binary'
-                  : 'register-mcp'
-                progress.report({ message: titleFor(id, message) })
-              }),
+              installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
             ),
         )
         log(`setup installed ${tag}`)
         await refresh()
         void vscode.window.showInformationMessage(
           `codebase-memory-mcp ${tag} installed. ` +
-            `${titleFor('register-mcp', 'Register the MCP server')} is the next step — ` +
+            `${wizardStepTitle('register-mcp')} is the next step — ` +
             `run "Install CLI" so the CLI writes its own MCP entry.`,
         )
       } catch (cause) {
@@ -208,7 +203,7 @@ export function activate(context: vscode.ExtensionContext): void {
           throw new Error(`could not read the installed version: ${installed.error}`)
         }
 
-        const latestTag = await resolveLatestTag((url, init) => fetch(url, init))
+        const latestTag = await resolveLatestTag(fetchImpl)
 
         if (compareVersions(latestTag, installed.value) <= 0) {
           void vscode.window.showInformationMessage(
@@ -218,11 +213,11 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: 'Better Codebase Memory MCP' },
+          { location: vscode.ProgressLocation.Notification, title: wizardStepTitle('download-binary') },
           async (progress) =>
             installRelease(
               latestTag,
-              installDeps((message) => progress.report({ message })),
+              installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
             ),
         )
         log(`update installed ${latestTag} (was ${installed.value})`)

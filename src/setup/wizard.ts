@@ -54,6 +54,11 @@ const STEPS: Record<WizardStepId, Omit<WizardStep, 'id'>> = {
 /** Every step id, for tests that must cover each one without hardcoding the list. */
 export const WIZARD_STEP_IDS = Object.keys(STEPS) as WizardStepId[]
 
+/** The user-facing title for a step id. The one place step text is allowed to live. */
+export function wizardStepTitle(id: WizardStepId): string {
+  return STEPS[id].title
+}
+
 /**
  * Remaining steps for the current state.
  *

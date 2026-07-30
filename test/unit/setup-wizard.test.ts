@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { wizardSteps, WIZARD_STEP_IDS, type WizardStep } from '../../src/setup/wizard'
+import { wizardSteps, wizardStepTitle, WIZARD_STEP_IDS, type WizardStep } from '../../src/setup/wizard'
 import { computeState, type StateInput } from '../../src/state/machine'
 
 const MANAGED = 'C:/storage/bin/cmm.exe'
@@ -91,6 +91,12 @@ describe('wizardSteps', () => {
       assert.ok(step, `no reachable state produced step '${id}'`)
       assert.ok(step.title.length > 0, `'${id}' has an empty title`)
       assert.ok(step.detail.length > 0, `'${id}' has an empty detail`)
+    }
+  })
+
+  it('wizardStepTitle agrees with the title wizardSteps computes for the same id', () => {
+    for (const step of wizardSteps(state({}), false)) {
+      assert.equal(wizardStepTitle(step.id), step.title)
     }
   })
 

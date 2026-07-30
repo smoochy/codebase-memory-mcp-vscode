@@ -11,6 +11,7 @@ import { sha256 } from '../../src/binary/verify'
 import type { RunOutput } from '../../src/cli/client'
 import type { FetchLike } from '../../src/binary/fetch'
 import { computeState, type ExtensionState } from '../../src/state/machine'
+import type { WizardStepId } from '../../src/setup/wizard'
 
 const PLATFORM: NodeJS.Platform = 'linux'
 const ARCH = 'x64'
@@ -246,11 +247,13 @@ describe('installRelease', () => {
     await assert.rejects(installRelease(TAG, deps), /does not contain/i)
   })
 
-  it('reports progress steps in order', async () => {
-    const seen: string[] = []
-    const deps = baseDeps({ onStep: (m) => seen.push(m) })
+  it('reports the download and verify step ids in order', async () => {
+    // onStep is typed as WizardStepId, so a renamed/removed id in wizard.ts
+    // fails this to compile rather than silently breaking a string match.
+    const seen: WizardStepId[] = []
+    const deps = baseDeps({ onStep: (id) => seen.push(id) })
     await installRelease(TAG, deps)
-    assert.deepEqual(seen, ['Downloading the binary', 'Verifying the download', 'Installing the binary'])
+    assert.deepEqual(seen, ['download-binary', 'verify-binary'])
   })
 })
 
