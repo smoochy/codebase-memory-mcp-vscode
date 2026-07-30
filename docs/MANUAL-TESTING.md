@@ -70,10 +70,11 @@ written to. Worth checking first.
 
 Deferred during implementation; each is recorded in the SDD ledger.
 
-1. **Version and update info never populate.** `refresh()` always sets
-   `version: null` and `updateAvailable: null`, so the panel shows neither, even
-   after a successful install. Expect a blank version field during tests #2 and #10.
-   This is a real gap, not a test-environment artifact.
+1. **The release lookup is cached for the whole session.** A release published
+   while VS Code is open is not noticed until the window reloads. Running
+   **Update Binary** always checks GitHub directly, so it is never stale.
+   Worth confirming during test #10 that the banner appears at all after a
+   restart with an older binary in place.
 2. **No progress line for the final install step.** The in-process binary move
    reports nothing; the panel keeps showing "Verify the download" until it
    finishes. Cosmetic — the operation is instant.
