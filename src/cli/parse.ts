@@ -48,3 +48,14 @@ export function extractJson<T>(stdout: string): CliResult<T> {
 
   return { ok: true, value: parsed as T }
 }
+
+/**
+ * The CLI store validator rejects lowercase-drive backslash paths as corrupt,
+ * so Windows paths become forward slashes with an uppercase drive letter.
+ */
+export function normalizeProjectPath(p: string): string {
+  const normalized = p.replace(/\\/g, '/')
+  return /^[a-z]:/.test(normalized)
+    ? normalized[0]!.toUpperCase() + normalized.slice(1)
+    : normalized
+}

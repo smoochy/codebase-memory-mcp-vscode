@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { extractJson, logLines } from '../../src/cli/parse'
+import { extractJson, logLines, normalizeProjectPath } from '../../src/cli/parse'
 
 describe('extractJson', () => {
   it('skips a leading log line', () => {
@@ -50,5 +50,19 @@ describe('extractJson', () => {
   it('returns the log lines separately', () => {
     const stdout = 'level=info msg=a\n{"ok":1}\nlevel=info msg=b'
     assert.deepEqual(logLines(stdout), ['level=info msg=a', 'level=info msg=b'])
+  })
+})
+
+describe('normalizeProjectPath', () => {
+  it('uppercases the drive letter and uses forward slashes', () => {
+    assert.equal(normalizeProjectPath('d:\\Repos\\App'), 'D:/Repos/App')
+  })
+
+  it('leaves a posix path alone', () => {
+    assert.equal(normalizeProjectPath('/home/x/app'), '/home/x/app')
+  })
+
+  it('leaves an already uppercase drive alone', () => {
+    assert.equal(normalizeProjectPath('D:/Repos/App'), 'D:/Repos/App')
   })
 })
