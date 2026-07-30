@@ -94,6 +94,8 @@ function redactKeyedValues(message: string): string {
 export function redactSecrets(message: string): string {
   return redactKeyedValues(message)
     .replace(/(Bearer\s+)[^\s"']+/gi, '$1REDACTED')
-    // Any Authorization scheme other than Bearer (already handled above).
-    .replace(/(Authorization:\s*(?!Bearer\s)\S+\s+)\S+/gi, '$1REDACTED')
+    // Any Authorization scheme other than Bearer (already handled above). Stops at a
+    // double quote too, so a header line embedded as prose inside a JSON string value
+    // doesn't consume the string's closing quote (and whatever follows it).
+    .replace(/(Authorization:\s*(?!Bearer\s)[^\s"]+\s+)[^\s"]+/gi, '$1REDACTED')
 }

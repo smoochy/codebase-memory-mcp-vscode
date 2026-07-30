@@ -203,4 +203,22 @@ describe('redactSecrets', () => {
   it('redacts refresh_token as a substring match, by design', () => {
     assert.equal(redactSecrets('refresh_token=abc'), 'refresh_token=REDACTED')
   })
+
+  it('redacts a non-Bearer Authorization line embedded as JSON string prose without eating the closing quote', () => {
+    const result = redactSecrets('{"msg":"Authorization: Basic zz"}')
+    assert.doesNotThrow(() => JSON.parse(result))
+    assert.ok(!result.includes('zz'))
+  })
+
+  it('redacts a Bearer Authorization line embedded as JSON string prose without eating the closing quote', () => {
+    const result = redactSecrets('{"msg":"Authorization: Bearer abc.def"}')
+    assert.doesNotThrow(() => JSON.parse(result))
+    assert.ok(!result.includes('abc.def'))
+  })
+
+  it('leaves a sibling field intact when redacting an embedded Authorization line', () => {
+    const result = redactSecrets('{"msg":"Authorization: Basic zz","count":3}')
+    const parsed = JSON.parse(result) as { count: number }
+    assert.equal(parsed.count, 3)
+  })
 })
