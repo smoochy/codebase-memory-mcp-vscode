@@ -97,4 +97,110 @@ describe('redactSecrets', () => {
   it('does not trigger on the word token in ordinary prose with no separator', () => {
     assert.equal(redactSecrets('the token is missing'), 'the token is missing')
   })
+
+  it('redacts an Authorization credential inside JSON, keeping the scheme visible', () => {
+    assert.equal(
+      redactSecrets('{"Authorization":"Basic abc"}'),
+      '{"Authorization":"Basic REDACTED"}',
+    )
+    assert.doesNotThrow(() => JSON.parse(redactSecrets('{"Authorization":"Basic abc"}')))
+  })
+
+  it('leaves an array-valued token field untouched rather than corrupting it', () => {
+    const result = redactSecrets('{"token":["abc"]}')
+    assert.equal(result, '{"token":["abc"]}')
+    assert.doesNotThrow(() => JSON.parse(result))
+  })
+
+  it('honours a backslash-escaped quote inside a token string value', () => {
+    const result = redactSecrets('{"token":"ab\\"cd"}')
+    assert.equal(result, '{"token":"REDACTED"}')
+    assert.doesNotThrow(() => JSON.parse(result))
+  })
+
+  it('leaves a numeric token value untouched', () => {
+    const result = redactSecrets('{"token":123}')
+    assert.equal(result, '{"token":123}')
+    assert.doesNotThrow(() => JSON.parse(result))
+  })
+
+  it('leaves a null token value untouched', () => {
+    const result = redactSecrets('{"token":null}')
+    assert.equal(result, '{"token":null}')
+    assert.doesNotThrow(() => JSON.parse(result))
+  })
+
+  it('still redacts a JSON-shaped access_token value (regression)', () => {
+    assert.equal(
+      redactSecrets('{"access_token":"abc123"}'),
+      '{"access_token":"REDACTED"}',
+    )
+  })
+
+  it('still redacts token in JSON leaving siblings untouched (regression)', () => {
+    assert.equal(
+      redactSecrets('{"token": "abc", "count": 3}'),
+      '{"token": "REDACTED", "count": 3}',
+    )
+  })
+
+  it('still redacts a non-Bearer Authorization header (regression)', () => {
+    assert.equal(
+      redactSecrets('Authorization: Basic dXNlcjpwdw=='),
+      'Authorization: Basic REDACTED',
+    )
+  })
+
+  it('still redacts a Bearer Authorization header (regression)', () => {
+    assert.equal(redactSecrets('Authorization: Bearer abc.def'), 'Authorization: Bearer REDACTED')
+  })
+
+  it('still stops at the next query parameter (regression)', () => {
+    assert.equal(
+      redactSecrets('https://x?access_token=abc&page=2'),
+      'https://x?access_token=REDACTED&page=2',
+    )
+  })
+
+  it('still redacts access_token= (regression)', () => {
+    assert.equal(redactSecrets('access_token=abc'), 'access_token=REDACTED')
+  })
+
+  it('still redacts api_key= (regression)', () => {
+    assert.equal(redactSecrets('api_key=abc'), 'api_key=REDACTED')
+  })
+
+  it('still redacts case-insensitively (regression)', () => {
+    assert.equal(redactSecrets('ACCESS_TOKEN=abc'), 'ACCESS_TOKEN=REDACTED')
+  })
+
+  it('still redacts a Bearer token at end-of-string (regression)', () => {
+    assert.equal(redactSecrets('Bearer abc.def'), 'Bearer REDACTED')
+  })
+
+  it('still leaves ordinary text alone (regression)', () => {
+    assert.equal(redactSecrets('indexed 42 files'), 'indexed 42 files')
+  })
+
+  it('still leaves the word token in prose alone (regression)', () => {
+    assert.equal(redactSecrets('the token is missing'), 'the token is missing')
+  })
+
+  it('redacts a nested token field', () => {
+    assert.equal(
+      redactSecrets('{"data":{"token":"abc"}}'),
+      '{"data":{"token":"REDACTED"}}',
+    )
+  })
+
+  it('redacts both access_token and token when both are present', () => {
+    assert.equal(
+      redactSecrets('{"access_token":"abc","token":"xyz"}'),
+      '{"access_token":"REDACTED","token":"REDACTED"}',
+    )
+  })
+
+  it('redacts refresh_token as a substring match, by design', () => {
+    assert.equal(redactSecrets('refresh_token=abc'), 'refresh_token=REDACTED')
+  })
 })
