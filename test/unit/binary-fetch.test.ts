@@ -57,6 +57,13 @@ describe('followRedirects', () => {
     )
   })
 
+  it('refuses a protocol-relative redirect to a host outside the allowlist', async () => {
+    await assert.rejects(
+      followRedirects(A, stubFetch({ [A]: redirect('//evil.tld/x') })),
+      /host not allowed/i,
+    )
+  })
+
   it('refuses a redirect that downgrades to http', async () => {
     await assert.rejects(
       followRedirects(A, stubFetch({ [A]: redirect('http://github.com/x') })),
