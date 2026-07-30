@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict'
+import type { ProjectSummary } from '../../src/cli/client'
 import { contentSecurityPolicy, escapeHtml, renderBody, type PanelModel } from '../../src/panel/html'
 import { computeState, type ExtensionState } from '../../src/state/machine'
 
@@ -23,17 +24,34 @@ describe('escapeHtml', () => {
     assert.equal(escapeHtml("a & b '"), 'a &amp; b &#39;')
   })
 
-  it('escapes & first so already-escaped-looking text is not double-unescaped', () => {
-    // If < were escaped before &, "&lt;" would become "&amp;lt;" only when &
-    // runs first; if the order were reversed the & in the literal "&lt;"
-    // input would never get escaped at all (no literal < present to trigger
-    // the < rule), leaving raw "&lt;" in the output — still safe here, but
-    // proves the & pass must run first and exactly once.
+  it('escapes & first so entities it emits are not re-escaped', () => {
+    // A raw < is the ordering probe: the < rule emits "&lt;", which contains an
+    // &. If the & pass ran after it, that emitted & would itself be escaped and
+    // the output would be "&amp;lt;" — rendering the entity as visible text.
+    // This assertion fails if the & pass is moved anywhere but first.
+    assert.equal(escapeHtml('<'), '&lt;')
+    assert.equal(escapeHtml('a<b&c'), 'a&lt;b&amp;c')
+    // Literal entity text in the input is escaped, not passed through.
     assert.equal(escapeHtml('&lt;'), '&amp;lt;')
   })
 
   it('escapes a backtick', () => {
     assert.equal(escapeHtml('`'), '&#96;')
+  })
+
+  it('does not throw when malformed CLI JSON yields a non-string', () => {
+    // ProjectSummary is cast, not validated — a null/number name must degrade
+    // to harmless text rather than crashing the whole panel render.
+    const bad = escapeHtml as unknown as (v: unknown) => string
+    assert.equal(bad(null), 'null')
+    assert.equal(bad(undefined), 'undefined')
+    assert.equal(bad(42), '42')
+    const html = renderBody(
+      model({ projects: [{ name: null, path: 42 } as unknown as ProjectSummary] }),
+      'n1',
+    )
+    assert.match(html, /<td>null<\/td>/)
+    assert.match(html, /42/)
   })
 })
 

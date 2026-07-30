@@ -21,7 +21,10 @@ export interface PanelModel {
  * a template literal.
  */
 export function escapeHtml(value: string): string {
-  return value
+  // The CLI's JSON is cast, not validated, so a malformed payload can put a
+  // non-string here at runtime. Coerce rather than throw: a broken name must
+  // not take down the whole panel render.
+  return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
