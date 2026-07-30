@@ -53,6 +53,26 @@ describe('externalCandidates', () => {
     const candidates = externalCandidates({ ...linux, pathVar: '/home/x/.local/bin' })
     assert.equal(new Set(candidates).size, candidates.length)
   })
+
+  it('drops relative PATH entries on a posix env', () => {
+    const candidates = externalCandidates({ ...linux, pathVar: '.:bin:/usr/bin' })
+    assert.ok(!candidates.some((c) => c === './codebase-memory-mcp'))
+    assert.ok(!candidates.some((c) => c === 'bin/codebase-memory-mcp'))
+  })
+
+  it('drops relative PATH entries on a win32 env', () => {
+    const candidates = externalCandidates({ ...windows, pathVar: '.;bin;C:\\tools' })
+    assert.ok(!candidates.some((c) => c === './codebase-memory-mcp.exe'))
+    assert.ok(!candidates.some((c) => c === 'bin/codebase-memory-mcp.exe'))
+  })
+
+  it('still resolves absolute PATH entries alongside dropped relative ones', () => {
+    const posix = externalCandidates({ ...linux, pathVar: '.:/usr/bin' })
+    assert.ok(posix.includes('/usr/bin/codebase-memory-mcp'))
+
+    const win = externalCandidates({ ...windows, pathVar: 'bin;C:\\tools' })
+    assert.ok(win.includes('C:/tools/codebase-memory-mcp.exe'))
+  })
 })
 
 describe('managedBinaryPath', () => {

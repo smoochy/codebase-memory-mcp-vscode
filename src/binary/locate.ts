@@ -15,6 +15,18 @@ function join(...parts: string[]): string {
 }
 
 /**
+ * Whether a raw PATH entry is absolute, per the injected platform rather than
+ * the host running this code. A relative entry resolves against the process's
+ * cwd, which an attacker can control — reject it instead of resolving it.
+ */
+function isAbsolute(dir: string, platform: NodeJS.Platform): boolean {
+  if (platform === 'win32') {
+    return /^[A-Za-z]:[\\/]/.test(dir) || /^[\\/]{2}/.test(dir)
+  }
+  return dir.startsWith('/')
+}
+
+/**
  * Where a user-installed binary may live, most likely first.
  *
  * PATH is scanned last: a well known location is a stronger signal than a
@@ -41,9 +53,9 @@ export function externalCandidates(env: LocateEnv): string[] {
 
   const fromPath = env.pathVar
     .split(env.pathSeparator)
-    .map((dir) => dir.trim().replace(/\\/g, '/'))
-    .filter((dir) => dir.length > 0)
-    .map((dir) => join(dir, name))
+    .map((dir) => dir.trim())
+    .filter((dir) => dir.length > 0 && isAbsolute(dir, env.platform))
+    .map((dir) => join(dir.replace(/\\/g, '/'), name))
 
   return [...new Set([...wellKnown, ...fromPath])]
 }
