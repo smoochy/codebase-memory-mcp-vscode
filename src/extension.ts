@@ -10,7 +10,7 @@ import { redactSecrets } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
-import { computeState, type BinarySource, type ExtensionState } from './state/machine'
+import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter } from 'node:path'
@@ -75,19 +75,65 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.commands.executeCommand(command, project)
   })
 
-  const refresh = async (): Promise<void> => {
-    const state = resolveState(storageDir)
-    if (state.activePath !== null) {
-      const result = await new CliClient(state.activePath, runProcess).listProjects()
-      projects = result.ok ? result.value : []
-    }
-    panel.update({ state, projects, version: null, updateAvailable: null })
-  }
-
   const log = (message: string): void => {
     // Anything derived from a URL, header or process output goes through the
     // redactor before it can land in a log the user pastes into an issue.
     channel.appendLine(redactSecrets(message))
+  }
+
+  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
+
+  /**
+   * Latest tag seen on GitHub, cached for the whole session.
+   *
+   * `refresh` runs on a timer, so the release lookup must not go out on every
+   * tick. Once per session is enough to surface an update; the user gets the
+   * current answer either way when they run the update command, which resolves
+   * the tag itself rather than reading this cache.
+   */
+  let latestTagCache: string | null = null
+
+  /** Remote lookup failures leave the panel without update info, never break the refresh. */
+  const cachedLatestTag = async (): Promise<string | null> => {
+    if (latestTagCache !== null) {
+      return latestTagCache
+    }
+    try {
+      latestTagCache = await resolveLatestTag(fetchImpl)
+      return latestTagCache
+    } catch (cause) {
+      log(`update check failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+      return null
+    }
+  }
+
+  const refresh = async (): Promise<void> => {
+    const state = resolveState(storageDir)
+    let version: string | null = null
+    let updateAvailable: string | null = null
+
+    if (state.activePath !== null) {
+      const client = new CliClient(state.activePath, runProcess)
+      const result = await client.listProjects()
+      projects = result.ok ? result.value : []
+
+      const installed = await client.version()
+      version = installed.ok ? installed.value : null
+
+      // Skip the release lookup entirely when the answer cannot matter, so a
+      // user on an external binary never causes a request to GitHub.
+      const checkForUpdates = setting('checkForUpdates', true)
+      if (version !== null && checkForUpdates && state.effectiveSource === 'managed') {
+        updateAvailable = updateOffer({
+          effectiveSource: state.effectiveSource,
+          installedVersion: version,
+          latestTag: await cachedLatestTag(),
+          checkForUpdates,
+        })
+      }
+    }
+
+    panel.update({ state, projects, version, updateAvailable })
   }
 
   const fail = (what: string, cause: unknown): void => {
@@ -117,8 +163,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     return false
   }
-
-  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
 
   const installDeps = (report: InstallDeps['onStep']) => ({
     fetchImpl,
@@ -221,6 +265,9 @@ export function activate(context: vscode.ExtensionContext): void {
             ),
         )
         log(`update installed ${latestTag} (was ${installed.value})`)
+        // The freshly resolved tag is now the installed one, so the cached
+        // answer would otherwise keep offering an update that already happened.
+        latestTagCache = latestTag
         await refresh()
         void vscode.window.showInformationMessage(
           `codebase-memory-mcp updated to ${latestTag}. Restart the MCP server ` +

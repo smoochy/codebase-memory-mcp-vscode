@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict'
 import {
   allowedActions,
+  updateOffer,
   computeState,
   type RegistrationStatus,
   type StateInput,
@@ -105,6 +106,49 @@ describe('computeState', () => {
       }),
     )
     assert.equal(state.pathConflict, null)
+  })
+})
+
+describe('updateOffer', () => {
+  const base = {
+    effectiveSource: 'managed' as const,
+    installedVersion: '0.9.0',
+    latestTag: 'v1.0.0',
+    checkForUpdates: true,
+  }
+
+  it('offers the newer tag for a managed binary', () => {
+    assert.equal(updateOffer(base), 'v1.0.0')
+  })
+
+  it('offers nothing when the installed version is already current', () => {
+    assert.equal(updateOffer({ ...base, installedVersion: '1.0.0' }), null)
+  })
+
+  it('offers nothing when the installed version is newer than the release', () => {
+    assert.equal(updateOffer({ ...base, installedVersion: '1.1.0' }), null)
+  })
+
+  it('never offers an update for an external binary, however new the release', () => {
+    assert.equal(updateOffer({ ...base, effectiveSource: 'external' }), null)
+  })
+
+  it('respects the checkForUpdates setting', () => {
+    assert.equal(updateOffer({ ...base, checkForUpdates: false }), null)
+  })
+
+  // A failed release lookup or an unreadable CLI version must leave the banner
+  // hidden rather than offering an update the extension cannot substantiate.
+  it('offers nothing when the release lookup failed', () => {
+    assert.equal(updateOffer({ ...base, latestTag: null }), null)
+  })
+
+  it('offers nothing when the installed version could not be read', () => {
+    assert.equal(updateOffer({ ...base, installedVersion: null }), null)
+  })
+
+  it('offers nothing before a binary is resolved at all', () => {
+    assert.equal(updateOffer({ ...base, effectiveSource: null }), null)
   })
 })
 
