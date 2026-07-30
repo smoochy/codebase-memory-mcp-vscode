@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { wizardSteps } from '../../src/setup/wizard'
+import { wizardSteps, WIZARD_STEP_IDS, type WizardStep } from '../../src/setup/wizard'
 import { computeState, type StateInput } from '../../src/state/machine'
 
 const MANAGED = 'C:/storage/bin/cmm.exe'
@@ -63,9 +63,62 @@ describe('wizardSteps', () => {
   })
 
   it('gives every step a title and a detail, so no step renders blank', () => {
-    for (const step of wizardSteps(state({}), false)) {
-      assert.ok(step.title.length > 0)
-      assert.ok(step.detail.length > 0)
+    const byId = new Map<string, WizardStep>()
+    // Sweep every reachable state combination so each WizardStepId is hit at least once,
+    // rather than reading text off one state's output (which only covers 5 of the ids).
+    for (const source of ['auto', 'managed', 'external'] as const) {
+      for (const managedPath of [null, MANAGED]) {
+        for (const externalPath of [null, EXTERNAL]) {
+          for (const registration of [
+            { kind: 'missing' as const },
+            { kind: 'present' as const, path: MANAGED },
+            { kind: 'present' as const, path: '/other/path' },
+            { kind: 'unknown' as const },
+          ]) {
+            for (const hasProjects of [false, true]) {
+              const s = state({ source, managedPath, externalPath, registration })
+              for (const step of wizardSteps(s, hasProjects)) {
+                byId.set(step.id, step)
+              }
+            }
+          }
+        }
+      }
     }
+
+    for (const id of WIZARD_STEP_IDS) {
+      const step = byId.get(id)
+      assert.ok(step, `no reachable state produced step '${id}'`)
+      assert.ok(step.title.length > 0, `'${id}' has an empty title`)
+      assert.ok(step.detail.length > 0, `'${id}' has an empty detail`)
+    }
+  })
+
+  it('emits resolve-path-conflict instead of done when the registered path disagrees, even with projects', () => {
+    const s = state({
+      source: 'managed',
+      managedPath: MANAGED,
+      registration: { kind: 'present', path: '/other/path' },
+    })
+    assert.deepEqual(ids(s, true), ['resolve-path-conflict'])
+  })
+
+  it('puts resolve-path-conflict before add-projects, since a wrong entry makes indexing point at the wrong store', () => {
+    const s = state({
+      source: 'managed',
+      managedPath: MANAGED,
+      registration: { kind: 'present', path: '/other/path' },
+    })
+    assert.deepEqual(ids(s, false), ['resolve-path-conflict', 'add-projects'])
+  })
+
+  it('leaves a conflict-free state unaffected', () => {
+    const s = state({
+      source: 'managed',
+      managedPath: MANAGED,
+      registration: { kind: 'present', path: MANAGED },
+    })
+    assert.deepEqual(ids(s, true), ['done'])
+    assert.deepEqual(ids(s, false), ['add-projects'])
   })
 })

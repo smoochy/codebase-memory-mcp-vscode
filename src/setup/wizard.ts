@@ -6,6 +6,7 @@ export type WizardStepId =
   | 'verify-binary'
   | 'register-mcp'
   | 'copy-install-command'
+  | 'resolve-path-conflict'
   | 'add-projects'
   | 'done'
 
@@ -36,6 +37,10 @@ const STEPS: Record<WizardStepId, Omit<WizardStep, 'id'>> = {
     title: 'Register your own installation',
     detail: 'Copy codebase-memory-mcp install and run it in a terminal.',
   },
+  'resolve-path-conflict': {
+    title: 'Resolve the registered path',
+    detail: 'The MCP entry points at a different binary than the active one. Re-run the install command so the entry matches.',
+  },
   'add-projects': {
     title: 'Add repositories',
     detail: 'Pick the repositories to index. The open workspace is not added by itself.',
@@ -45,6 +50,9 @@ const STEPS: Record<WizardStepId, Omit<WizardStep, 'id'>> = {
     detail: 'The binary is installed, registered, and at least one project is indexed.',
   },
 }
+
+/** Every step id, for tests that must cover each one without hardcoding the list. */
+export const WIZARD_STEP_IDS = Object.keys(STEPS) as WizardStepId[]
 
 /**
  * Remaining steps for the current state.
@@ -60,6 +68,10 @@ export function wizardSteps(state: ExtensionState, hasProjects: boolean): Wizard
     ids.push('choose-source', 'download-binary', 'verify-binary', 'register-mcp')
   } else if (state.kind === 'binary-not-registered') {
     ids.push(actions.showInstallButton ? 'register-mcp' : 'copy-install-command')
+  }
+
+  if (state.pathConflict !== null) {
+    ids.push('resolve-path-conflict')
   }
 
   if (!hasProjects) {
