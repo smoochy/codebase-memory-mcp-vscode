@@ -65,6 +65,31 @@ describe('CliClient', () => {
     assert.ok(calls[0]?.args.includes('D:/Repos/App'))
   })
 
+  it('prefers the structured CLI error over stderr when both are present', async () => {
+    const stdout = '{"error":"project required","hint":"pass --project"}'
+    const client = new CliClient(BIN, stubRunner({ stdout, stderr: 'boom', code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /project required/)
+    assert.doesNotMatch(result.ok ? '' : result.error, /boom/)
+    assert.doesNotMatch(result.ok ? '' : result.error, /CLI exited with/)
+  })
+
+  it('carries the hint through from a structured CLI error at non-zero exit', async () => {
+    const stdout = '{"error":"project required","hint":"pass --project"}'
+    const client = new CliClient(BIN, stubRunner({ stdout, stderr: 'boom', code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.equal(result.ok ? undefined : result.hint, 'pass --project')
+  })
+
+  it('falls back to the exit-code path for malformed JSON rather than treating it as structured', async () => {
+    const client = new CliClient(BIN, stubRunner({ stdout: '{not json', stderr: 'boom', code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /CLI exited with 1: boom/)
+  })
+
   it('surfaces a runner rejection as a failed result rather than throwing', async () => {
     const failing: Runner = async () => {
       throw new Error('ENOENT')

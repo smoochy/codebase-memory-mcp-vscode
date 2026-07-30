@@ -39,11 +39,13 @@ export class CliClient {
     }
 
     const parsed = extractJson<T>(output.stdout)
-    if (parsed.ok) {
+    if (parsed.ok || parsed.structured) {
+      // A parsed payload — success or the CLI's own structured error — is the
+      // failure signal, not the exit code (spec, appendix A).
       return parsed
     }
 
-    // No JSON came back, so fall back to whatever the process reported.
+    // No usable JSON came back, so fall back to whatever the process reported.
     if (output.code !== 0) {
       const detail = output.stderr.trim() || parsed.error
       return { ok: false, error: `CLI exited with ${String(output.code)}: ${detail}` }

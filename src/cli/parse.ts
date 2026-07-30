@@ -1,7 +1,7 @@
 /** Result of a CLI call. The CLI reports failures as JSON with exit code 0. */
 export type CliResult<T> =
   | { ok: true; value: T }
-  | { ok: false; error: string; hint?: string }
+  | { ok: false; error: string; hint?: string; structured?: boolean }
 
 /** Lines that are not the JSON payload — the CLI logs `level=…` to stdout. */
 export function logLines(stdout: string): string[] {
@@ -42,6 +42,7 @@ export function extractJson<T>(stdout: string): CliResult<T> {
     return {
       ok: false,
       error: String(record.error),
+      structured: true,
       ...(typeof record.hint === 'string' ? { hint: record.hint } : {}),
     }
   }
