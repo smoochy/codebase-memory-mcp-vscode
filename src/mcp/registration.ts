@@ -99,6 +99,20 @@ export function readRegistration(text: string | null): RegistrationStatus {
   return { kind: 'missing' }
 }
 
+/**
+ * Directory name of the active profile, or undefined on the default profile.
+ *
+ * Global storage lives at `User/globalStorage/<publisher>.<name>` by default and
+ * at `User/profiles/<id>/globalStorage/<publisher>.<name>` on a named profile,
+ * so the profile identifier can be read straight off the storage path.
+ */
+export function activeProfileDir(storageDir: string): string | undefined {
+  const match = /\/User\/profiles\/([^/]+)\/globalStorage\//.exec(
+    storageDir.replace(/\\/g, '/'),
+  )
+  return match?.[1]
+}
+
 export interface McpPathEnv {
   platform: NodeJS.Platform
   home: string

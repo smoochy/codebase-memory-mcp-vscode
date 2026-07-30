@@ -12,20 +12,24 @@
     "Other"
   ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onView:betterCmm.panel"],
+  "activationEvents": [
+    "onView:betterCmm.panel"
+  ],
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "compile:test": "tsc -p tsconfig.test.json",
     "test:unit": "npm run compile:test && mocha",
+    "test:integration": "npm run build && npm run compile:test && node ./out/test/integration/runTest.js",
+    "test": "npm run test:unit && npm run test:integration",
     "lint": "tsc --noEmit -p tsconfig.json",
     "package": "vsce package --no-dependencies"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "mocha": "^10.7.0",
@@ -33,15 +37,51 @@
   },
   "contributes": {
     "commands": [
-      { "command": "betterCmm.runSetup", "title": "Run Setup", "category": "Codebase Memory" },
-      { "command": "betterCmm.installCli", "title": "Register MCP Server", "category": "Codebase Memory" },
-      { "command": "betterCmm.copyInstallCommand", "title": "Copy Install Command", "category": "Codebase Memory" },
-      { "command": "betterCmm.copyUninstallCommand", "title": "Copy Uninstall Command", "category": "Codebase Memory" },
-      { "command": "betterCmm.updateBinary", "title": "Update Binary", "category": "Codebase Memory" },
-      { "command": "betterCmm.addProject", "title": "Add Repositories", "category": "Codebase Memory" },
-      { "command": "betterCmm.removeProject", "title": "Remove Project", "category": "Codebase Memory" },
-      { "command": "betterCmm.refresh", "title": "Refresh", "category": "Codebase Memory" },
-      { "command": "betterCmm.showLogs", "title": "Show Logs", "category": "Codebase Memory" }
+      {
+        "command": "betterCmm.runSetup",
+        "title": "Run Setup",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.installCli",
+        "title": "Register MCP Server",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.copyInstallCommand",
+        "title": "Copy Install Command",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.copyUninstallCommand",
+        "title": "Copy Uninstall Command",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.updateBinary",
+        "title": "Update Binary",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.addProject",
+        "title": "Add Repositories",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.removeProject",
+        "title": "Remove Project",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.refresh",
+        "title": "Refresh",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.showLogs",
+        "title": "Show Logs",
+        "category": "Codebase Memory"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -53,14 +93,24 @@
       ]
     },
     "views": {
-      "betterCmm": [{ "id": "betterCmm.panel", "name": "Codebase Memory", "type": "webview" }]
+      "betterCmm": [
+        {
+          "id": "betterCmm.panel",
+          "name": "Codebase Memory",
+          "type": "webview"
+        }
+      ]
     },
     "configuration": {
       "title": "Better Codebase Memory MCP",
       "properties": {
         "betterCmm.binarySource": {
           "type": "string",
-          "enum": ["auto", "managed", "external"],
+          "enum": [
+            "auto",
+            "managed",
+            "external"
+          ],
           "enumDescriptions": [
             "Use an existing installation when one is found, otherwise the managed binary.",
             "Always use the binary this extension downloads and updates.",
@@ -92,7 +142,12 @@
         },
         "betterCmm.logLevel": {
           "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
           "default": "info",
           "description": "Verbosity of the extension log."
         }
