@@ -81,7 +81,7 @@ describe('CliClient', () => {
   it('normalizes a Windows path before adding a project', async () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('d:\\Repos\\App')
-    assert.ok(calls[0]?.args.includes('--path=D:/Repos/App'))
+    assert.ok(calls[0]?.args.includes('--repo-path=D:/Repos/App'))
   })
 
   // A project name comes from the CLI's own JSON, which is filled from indexed
@@ -110,7 +110,7 @@ describe('CliClient', () => {
   it('binds a path that looks like a flag when adding a project', async () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('--exclude=x')
-    assert.deepEqual(calls[0]?.args, ['cli', 'index_repository', '--path=--exclude=x', '--json'])
+    assert.deepEqual(calls[0]?.args, ['cli', 'index_repository', '--repo-path=--exclude=x', '--json'])
   })
 
   it('prefers the structured CLI error over stderr when both are present', async () => {

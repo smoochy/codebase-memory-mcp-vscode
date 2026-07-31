@@ -82,6 +82,9 @@ const ICONS: Record<string, string> = {
   copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 5.5v-1a1.4 1.4 0 0 0-1.4-1.4H3.9A1.4 1.4 0 0 0 2.5 4.5v5.2a1.4 1.4 0 0 0 1.4 1.4h1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
   arrowUp: '<path d="M8 13V4m0 0L4.8 7.2M8 4l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   logs: '<path d="M3.5 4h9M3.5 7h6M3.5 10h9M3.5 13h4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  // Reindex rebuilds the stored graph, so it reads as a database rather than a
+  // second refresh arrow — two identical arrows side by side are a coin toss.
+  reindex: '<ellipse cx="8" cy="4" rx="4.6" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.4 4v8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8V4M3.4 8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   trash: '<path d="M2.8 4.4h10.4M6.2 4.4V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.2M4.3 4.4v8a1.2 1.2 0 0 0 1.2 1.2h5a1.2 1.2 0 0 0 1.2-1.2v-8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
 }
 
@@ -113,7 +116,9 @@ function metrics(projects: ProjectSummary[]): string {
   const cards = [
     { value: formatCount(total(projects, 'nodes')), label: 'Nodes' },
     { value: formatCount(total(projects, 'edges')), label: 'Edges' },
-    { value: formatBytes(total(projects, 'size_bytes')), label: 'Index size' },
+    // Projects, per the spec: it replaces the reference extension's Uptime
+    // tile, which was always empty. Index size stays visible per project.
+    { value: formatCount(projects.length), label: 'Projects' },
   ]
     .map(
       (card) =>
@@ -214,6 +219,17 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
         `<span>${escapeHtml(formatCount(project.nodes))} <em>nodes</em></span>` +
         '<span class="sep">·</span>' +
         `<span>${escapeHtml(formatCount(project.edges))} <em>edges</em></span>` +
+        // Size and branch per the spec. Both are omitted rather than shown as
+        // a dash when the CLI does not report them, so a non-git checkout does
+        // not carry an empty-looking field.
+        (project.size_bytes === undefined
+          ? ''
+          : '<span class="sep">·</span>' +
+            `<span>${escapeHtml(formatBytes(project.size_bytes))}</span>`) +
+        (typeof project.git?.branch === 'string' && project.git.branch.length > 0
+          ? '<span class="sep">·</span>' +
+            `<span class="branch">${escapeHtml(project.git.branch)}</span>`
+          : '') +
         '</div>' +
         '</div>'
       )
@@ -295,8 +311,14 @@ export function renderBody(model: PanelModel, nonce: string): string {
     )
   }
   buttons.push(button('betterCmm.addProject', 'Add repositories', 'plus'))
+  // Reindex only makes sense once something is indexed; offering it against an
+  // empty list would be a button that provably does nothing.
+  if (model.projects.length > 0) {
+    buttons.push(button('betterCmm.reindex', 'Reindex', 'reindex'))
+  }
   buttons.push(button('betterCmm.refresh', 'Refresh', 'refresh'))
   buttons.push(button('betterCmm.showLogs', 'View logs', 'logs'))
+  buttons.push(button('betterCmm.runSetup', 'Setup', 'download'))
 
   parts.push(section('Actions', `<div class="actions">${buttons.join('')}</div>`))
   parts.push(section('Projects', projectCards(model.projects, loading)))
@@ -480,6 +502,11 @@ section h2 {
 }
 .card-stats em { font-style: normal; opacity: .7; }
 .card-stats .sep { opacity: .35; }
+/* The branch reads as a label rather than another number. */
+.card-stats .branch {
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--accent);
+}
 .skeleton { display: flex; flex-direction: column; gap: 7px; }
 .sk { display: block; height: 9px; border-radius: 4px; background: var(--surface-hi); animation: sk 1.3s ease-in-out infinite; }
 .sk-1 { width: 45%; }

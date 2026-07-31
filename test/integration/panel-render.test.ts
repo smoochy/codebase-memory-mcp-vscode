@@ -75,6 +75,46 @@ describe('panel renders in a real extension host', () => {
     assert.doesNotMatch(html, /target instanceof HTMLElement/)
   })
 
+  it('wires every panel button to a command VS Code actually registered', async () => {
+    // "The button has no function" is what an unregistered or misspelled
+    // data-command looks like from the outside, and nothing caught it before:
+    // the panel and the manifest were only ever checked separately.
+    const registered = await vscode.commands.getCommands(true)
+    const wired = [...html.matchAll(/data-command="([^"]+)"/g)].map((m) => m[1])
+    assert.ok(wired.length > 0, 'panel rendered no buttons at all')
+    for (const command of new Set(wired)) {
+      assert.ok(registered.includes(command!), `panel button targets unregistered ${command!}`)
+    }
+  })
+
+  // Executing each one proves the handler runs. A handler that throws is
+  // indistinguishable from a dead button in the UI. Commands that open a modal
+  // dialog (addProject, removeProject) are excluded — they would block here.
+  for (const command of [
+    'betterCmm.refresh',
+    'betterCmm.showLogs',
+    'betterCmm.openSettings',
+    'betterCmm.reindex',
+  ]) {
+    it(`executes ${command} without throwing`, async function () {
+      this.timeout(30_000)
+      await vscode.commands.executeCommand(command)
+    })
+  }
+
+  it('offers the settings and refresh actions in the view title bar', () => {
+    const manifest = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON as {
+      contributes: { menus?: Record<string, { command: string; when?: string }[]> }
+    }
+    const title = manifest.contributes.menus?.['view/title'] ?? []
+    const commands = title.map((entry) => entry.command)
+    assert.ok(commands.includes('betterCmm.openSettings'), 'no settings gear in the title bar')
+    assert.ok(commands.includes('betterCmm.refresh'), 'no refresh in the title bar')
+    for (const entry of title) {
+      assert.equal(entry.when, 'view == betterCmm.panel')
+    }
+  })
+
   it('renders the rebuilt structure rather than the old flat list', () => {
     assert.ok(html.includes('brand-sub'), 'no header sub-title')
     assert.ok(html.includes('metrics'), 'no metric row')

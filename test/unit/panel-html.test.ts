@@ -178,7 +178,11 @@ describe('renderBody', () => {
     )
     assert.match(html, /15/)
     assert.match(html, /27/)
-    assert.match(html, /2\.0 KB/)
+    // The third tile counts projects, per the spec — it replaces the reference
+    // extension's always-empty Uptime tile. Per-project size stays on the card.
+    assert.match(html, /<div class="metric-value">2<\/div>/)
+    assert.match(html, /Projects/)
+    assert.match(html, /1\.0 KB/)
   })
 
   it('shows a skeleton instead of an empty list while the CLI is still running', () => {

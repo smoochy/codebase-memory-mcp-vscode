@@ -22,6 +22,8 @@ export interface ProjectSummary {
   nodes?: number
   edges?: number
   size_bytes?: number
+  /** Present for git checkouts; `branch` is null on a detached or non-git root. */
+  git?: { branch?: string | null }
 }
 
 export interface IndexStatus {
@@ -93,10 +95,13 @@ export class CliClient {
   }
 
   async addProject(path: string): Promise<CliResult<unknown>> {
+    // `--repo-path`, not `--path`: the tool's parameter is `repo_path`, and an
+    // unknown flag is ignored rather than rejected, so `--path` silently made
+    // the CLI index its own working directory instead of the chosen folder.
     return this.json<unknown>([
       'cli',
       'index_repository',
-      `--path=${normalizeProjectPath(path)}`,
+      `--repo-path=${normalizeProjectPath(path)}`,
       '--json',
     ])
   }

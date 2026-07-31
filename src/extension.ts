@@ -361,7 +361,52 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.refresh': refresh,
-    'betterCmm.showLogs': () => channel.show(),
+    // preserveFocus false, so the panel actually comes forward. Without it a
+    // click on "View logs" can leave the output view behind whatever is
+    // already showing, which reads as the button doing nothing.
+    'betterCmm.showLogs': () => {
+      channel.show(false)
+    },
+    'betterCmm.openSettings': async () => {
+      await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
+    },
+    'betterCmm.reindex': async () => {
+      const state = resolveState(storageDir)
+      if (state.activePath === null || projects.length === 0) {
+        return
+      }
+      // Re-running index_repository against a known root is what refreshes an
+      // existing project; there is no separate reindex tool.
+      const roots = projects.map((project) => project.root_path)
+      const client = new CliClient(state.activePath, runProcess, 300_000)
+      const failures: string[] = []
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Reindexing projects' },
+        async (progress) => {
+          for (const [done, root] of roots.entries()) {
+            progress.report({ message: `${root} (${String(done + 1)}/${String(roots.length)})` })
+            const result = await client.addProject(root)
+            if (!result.ok) {
+              failures.push(root)
+              log(`reindex failed for ${root}: ${result.error}`)
+            }
+          }
+        },
+      )
+      if (failures.length > 0) {
+        void vscode.window
+          .showErrorMessage(
+            `Could not reindex ${String(failures.length)} of ${String(roots.length)} projects.`,
+            'View logs',
+          )
+          .then((choice) => {
+            if (choice === 'View logs') {
+              channel.show(false)
+            }
+          })
+      }
+      await refresh()
+    },
   }
 
   for (const id of COMMAND_IDS) {
