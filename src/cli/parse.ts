@@ -25,6 +25,23 @@ interface McpEnvelope {
   isError?: unknown
 }
 
+/**
+ * Stringify a value that came out of JSON.parse without ever throwing.
+ *
+ * `String(value)` looks total but is not: an object whose `toString` and
+ * `valueOf` are both non-callable (`{"toString":1,"valueOf":1}` parses to
+ * exactly that) makes it throw `Cannot convert object to primitive value`.
+ * That throw would escape into the refresh timer, which has no handler, and
+ * take the panel down on every tick.
+ */
+function asText(value: unknown): string {
+  if (typeof value === 'string') {
+    return value
+  }
+  // JSON.stringify cannot throw on a JSON.parse product: no cycles, no BigInt.
+  return JSON.stringify(value) ?? 'unknown'
+}
+
 /** True for the payload shapes the CLI uses to report a failure. */
 function structuredError(payload: unknown): { error: string; hint?: string } | null {
   if (typeof payload !== 'object' || payload === null) {
@@ -35,7 +52,7 @@ function structuredError(payload: unknown): { error: string; hint?: string } | n
 
   // `{"error": "..."}` is the plain form.
   if ('error' in record) {
-    return { error: String(record.error), ...hint }
+    return { error: asText(record.error), ...hint }
   }
   // `{"status": "error", "outcome": "exit_nonzero", "hint": "..."}` is what the
   // indexing tools return; there is no `error` key at all, so checking only for
@@ -43,7 +60,7 @@ function structuredError(payload: unknown): { error: string; hint?: string } | n
   if (record.status === 'error') {
     const outcome = (record as { outcome?: unknown }).outcome
     return {
-      error: outcome === undefined ? 'the CLI reported an error' : String(outcome),
+      error: outcome === undefined ? 'the CLI reported an error' : asText(outcome),
       ...hint,
     }
   }
@@ -81,6 +98,14 @@ export function extractJson<T>(stdout: string): CliResult<T> {
 
   const payload = unwrapEnvelope(parsed)
 
+  if (payload instanceof NonJsonText) {
+    const detail = payload.text.trim()
+    return {
+      ok: false,
+      error: detail.length === 0 ? 'the CLI returned no JSON' : detail,
+    }
+  }
+
   const failure = structuredError(payload)
   if (failure !== null) {
     return { ok: false, structured: true, ...failure }
@@ -111,13 +136,19 @@ function unwrapEnvelope(parsed: unknown): unknown {
     try {
       return JSON.parse(text)
     } catch {
-      // A tool that answers in prose rather than JSON: hand back the text so
-      // the caller can surface it instead of failing to parse it.
-      return text
+      // Every invocation passes --json, so prose is a failure by definition.
+      // Returning the text as a payload made it a silent empty success — the
+      // exact symptom this whole parser change exists to remove.
+      return new NonJsonText(text)
     }
   }
 
   return parsed
+}
+
+/** Marker for envelope text that was not JSON, so it cannot pass as a payload. */
+class NonJsonText {
+  constructor(readonly text: string) {}
 }
 
 /**

@@ -45,6 +45,20 @@ describe('runProcess', () => {
     assert.ok(result.stderr.length >= MAX_CAPTURED_OUTPUT)
   })
 
+  // The wrapped binary is an MCP server that reads stdin. With stdin left as
+  // an open pipe it waits for input that never arrives, so every call ran into
+  // its timeout and returned nothing — measured against the real binary as a
+  // hang with 0 bytes, versus 210 ms and a full payload once stdin was closed.
+  it('closes stdin, so a child that waits on it still finishes', async () => {
+    const result = await runProcess(
+      NODE,
+      ['-e', 'process.stdin.resume(); process.stdin.on("end", () => process.stdout.write("eof"))'],
+      5_000,
+    )
+    assert.equal(result.stdout, 'eof')
+    assert.equal(result.code, 0)
+  })
+
   it('rejects when the child outlives the timeout', async () => {
     await assert.rejects(
       runProcess(NODE, ['-e', 'setTimeout(() => {}, 30000)'], 300),

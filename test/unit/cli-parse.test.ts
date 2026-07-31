@@ -59,6 +59,29 @@ describe('extractJson', () => {
     assert.equal(result.value.ok, 1)
   })
 
+  // `String(x)` throws on an object whose toString and valueOf are both
+  // non-callable, and JSON.parse produces exactly that from this literal.
+  // The throw escaped into the refresh timer, which has no handler.
+  const UNSTRINGIFIABLE = '{"toString":1,"valueOf":1}'
+
+  it('does not throw on an error value that cannot be stringified', () => {
+    const result = extractJson<unknown>(`{"structuredContent":{"error":${UNSTRINGIFIABLE}}}`)
+    assert.equal(result.ok, false)
+  })
+
+  it('does not throw on an unstringifiable status:"error" outcome', () => {
+    const result = extractJson<unknown>(
+      `{"structuredContent":{"status":"error","outcome":${UNSTRINGIFIABLE}}}`,
+    )
+    assert.equal(result.ok, false)
+  })
+
+  it('reports prose output as a failure rather than an empty success', () => {
+    const result = extractJson<unknown>('{"content":[{"type":"text","text":"not json at all"}]}')
+    assert.equal(result.ok, false)
+    assert.ok(!result.ok && result.error.includes('not json at all'))
+  })
+
   it('skips a leading log line', () => {
     const stdout = [
       'level=info msg=mem.init budget_mb=32538 total_ram_mb=65077',

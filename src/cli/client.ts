@@ -63,15 +63,29 @@ export class CliClient {
   }
 
   async listProjects(): Promise<CliResult<ProjectSummary[]>> {
-    const result = await this.json<{ projects?: ProjectSummary[] }>([
-      'cli',
-      'list_projects',
-      '--json',
-    ])
+    const result = await this.json<unknown>(['cli', 'list_projects', '--json'])
     if (!result.ok) {
       return result
     }
-    return { ok: true, value: result.value.projects ?? [] }
+    // This is the one place the untyped CLI payload becomes a typed domain
+    // object, so it is the one place the shape has to be checked. `.projects`
+    // being null, a string, an object, or an array of nulls all used to reach
+    // the panel and throw there — inside a refresh timer with no handler,
+    // which takes the panel down on every tick rather than once.
+    const projects = (result.value as { projects?: unknown } | null)?.projects
+    if (!Array.isArray(projects)) {
+      return { ok: true, value: [] }
+    }
+    return {
+      ok: true,
+      value: projects.filter(
+        (entry): entry is ProjectSummary =>
+          typeof entry === 'object' &&
+          entry !== null &&
+          typeof (entry as ProjectSummary).name === 'string' &&
+          typeof (entry as ProjectSummary).root_path === 'string',
+      ),
+    }
   }
 
   async indexStatus(project: string): Promise<CliResult<IndexStatus>> {

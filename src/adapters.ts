@@ -59,7 +59,17 @@ export const MAX_CAPTURED_OUTPUT = 8 * 1024 * 1024
  */
 export const runProcess: Runner = (command, args, timeoutMs) =>
   new Promise<RunOutput>((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, windowsHide: true })
+    // stdin must be closed, not left as an open pipe. The binary is an MCP
+    // server that reads stdin, so with a pipe attached it waits for input that
+    // never comes and every call runs into its timeout: measured 0 bytes and a
+    // hang with stdin open, versus 210 ms and a full payload with it closed.
+    // That, not the panel, is why refreshing and adding repositories did
+    // nothing at all.
+    const child = spawn(command, args, {
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     let stdout = ''
     let stderr = ''
     let settled = false

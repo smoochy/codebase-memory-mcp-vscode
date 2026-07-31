@@ -18,12 +18,31 @@ describe('CliClient', () => {
   it('parses the project list past the log preamble', async () => {
     const stdout =
       'level=info msg=mem.init budget_mb=32538 total_ram_mb=65077\n' +
-      '{"projects":[{"name":"a","path":"D:/a"}]}\n'
+      '{"projects":[{"name":"a","root_path":"D:/a"}]}\n'
     const client = new CliClient(BIN, stubRunner({ stdout }))
     const result = await client.listProjects()
     assert.equal(result.ok, true)
-    assert.deepEqual(result.ok ? result.value : null, [{ name: 'a', path: 'D:/a' }])
+    assert.deepEqual(result.ok ? result.value : null, [{ name: 'a', root_path: 'D:/a' }])
   })
+
+  // Each of these reached the panel and threw there before listProjects
+  // validated the shape — inside the refresh timer, which has no handler, so
+  // the panel broke on every tick rather than once.
+  for (const [label, payload] of [
+    ['a null payload', '{"structuredContent":null}'],
+    ['a non-array projects field', '{"projects":{}}'],
+    ['a string projects field', '{"projects":"abc"}'],
+    ['null entries', '{"projects":[null]}'],
+    ['entries missing root_path', '{"projects":[{"name":"a"}]}'],
+    ['an unstringifiable name', '{"projects":[{"name":{"toString":1,"valueOf":1}}]}'],
+  ] as const) {
+    it(`survives ${label} without throwing`, async () => {
+      const client = new CliClient(BIN, stubRunner({ stdout: payload }))
+      const result = await client.listProjects()
+      assert.equal(result.ok, true)
+      assert.deepEqual(result.ok ? result.value : null, [])
+    })
+  }
 
   it('returns an empty list when the CLI reports no projects', async () => {
     const client = new CliClient(BIN, stubRunner({ stdout: '{"projects":[]}' }))
