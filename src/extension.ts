@@ -57,9 +57,14 @@ function resolveState(storageDir: string): ExtensionState {
   })
 }
 
-/** What `vscode.extensions.getExtension(id).exports` yields. */
+/**
+ * What `vscode.extensions.getExtension(id).exports` yields.
+ *
+ * Empty in production; the test hook is only present under the development
+ * and test extension modes.
+ */
 export interface ExtensionApi {
-  panelHtmlForTests: () => string
+  panelHtmlForTests?: () => string
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -359,11 +364,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   void refresh()
 
-  // Returned to whoever activates the extension; VS Code surfaces it as
-  // `extension.exports`. The integration suite reads the panel's real markup
-  // through this, which is the only check that sees what the packaged bundle
-  // renders rather than what the current source would render.
-  return { panelHtmlForTests: () => panel.renderedHtml }
+  // Surfaced as `extension.exports`, which every installed extension can
+  // read. The panel markup holds nothing a co-installed extension could not
+  // already read from disk, but this exists only so the integration suite can
+  // assert on what the running host rendered, so it stays out of production
+  // rather than widening the exported surface for no user-facing reason.
+  return context.extensionMode === vscode.ExtensionMode.Production
+    ? {}
+    : { panelHtmlForTests: () => panel.renderedHtml }
 }
 
 export function deactivate(): void {
