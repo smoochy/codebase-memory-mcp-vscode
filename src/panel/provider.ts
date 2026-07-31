@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { contentSecurityPolicy, renderBody, type PanelModel } from './html'
+import { contentSecurityPolicy, renderBody, PANEL_CSS, type PanelModel } from './html'
 
 function makeNonce(): string {
   const bytes = new Uint8Array(16)
@@ -43,14 +43,31 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   }
 
   private render(): void {
-    if (this.view === undefined || this.model === undefined) {
+    if (this.view === undefined) {
       return
+    }
+    // The first CLI call takes seconds. Rendering the skeleton rather than
+    // returning early is what stops the panel from looking blank and broken
+    // while it runs.
+    const model: PanelModel = this.model ?? {
+      state: {
+        kind: 'ready-managed',
+        activePath: null,
+        effectiveSource: 'managed',
+        notice: null,
+        pathConflict: null,
+      },
+      projects: [],
+      version: null,
+      updateAvailable: null,
+      loading: true,
     }
     const nonce = makeNonce()
     const csp = contentSecurityPolicy(nonce, this.view.webview.cspSource)
     this.view.webview.html =
       `<!DOCTYPE html><html><head>` +
       `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
-      `</head><body>${renderBody(this.model, nonce)}</body></html>`
+      `<style nonce="${nonce}">${PANEL_CSS}</style>` +
+      `</head><body>${renderBody(model, nonce)}</body></html>`
   }
 }

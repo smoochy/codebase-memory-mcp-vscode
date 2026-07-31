@@ -8,11 +8,20 @@ export interface RunOutput {
 
 export type Runner = (command: string, args: string[], timeoutMs: number) => Promise<RunOutput>
 
+/**
+ * One indexed repository, as the CLI reports it.
+ *
+ * Field names mirror `cli list_projects --json` exactly, including the
+ * snake_case `root_path` and `size_bytes`. Renaming them here would mean a
+ * translation step that silently yields `undefined` the day the CLI changes a
+ * name — which is precisely the bug this shape replaced.
+ */
 export interface ProjectSummary {
   name: string
-  path: string
-  files?: number
-  symbols?: number
+  root_path: string
+  nodes?: number
+  edges?: number
+  size_bytes?: number
 }
 
 export interface IndexStatus {

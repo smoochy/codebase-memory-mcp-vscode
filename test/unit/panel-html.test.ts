@@ -1,6 +1,13 @@
 import * as assert from 'node:assert/strict'
 import type { ProjectSummary } from '../../src/cli/client'
-import { contentSecurityPolicy, escapeHtml, renderBody, type PanelModel } from '../../src/panel/html'
+import {
+  contentSecurityPolicy,
+  escapeHtml,
+  formatBytes,
+  formatCount,
+  renderBody,
+  type PanelModel,
+} from '../../src/panel/html'
 import { computeState, type ExtensionState } from '../../src/state/machine'
 
 const MANAGED = 'C:/storage/bin/cmm.exe'
@@ -47,11 +54,39 @@ describe('escapeHtml', () => {
     assert.equal(bad(undefined), 'undefined')
     assert.equal(bad(42), '42')
     const html = renderBody(
-      model({ projects: [{ name: null, path: 42 } as unknown as ProjectSummary] }),
+      model({ projects: [{ name: null, root_path: 42 } as unknown as ProjectSummary] }),
       'n1',
     )
-    assert.match(html, /<td>null<\/td>/)
+    assert.match(html, /null/)
     assert.match(html, /42/)
+  })
+})
+
+describe('formatCount', () => {
+  it('groups thousands', () => {
+    assert.equal(formatCount(19768), '19,768')
+  })
+
+  it('shows a dash rather than a bare zero for nothing indexed', () => {
+    assert.equal(formatCount(0), '—')
+    assert.equal(formatCount(undefined), '—')
+  })
+})
+
+describe('formatBytes', () => {
+  it('scales to binary units', () => {
+    assert.equal(formatBytes(512), '512 B')
+    assert.equal(formatBytes(1024), '1.0 KB')
+    assert.equal(formatBytes(41156608), '39.3 MB')
+  })
+
+  it('shows a dash for an absent or empty index', () => {
+    assert.equal(formatBytes(0), '—')
+    assert.equal(formatBytes(undefined), '—')
+  })
+
+  it('stops at the largest unit rather than running off the end of the table', () => {
+    assert.match(formatBytes(5 * 1024 ** 5), /TB$/)
   })
 })
 
@@ -106,16 +141,71 @@ describe('renderBody', () => {
 
   it('renders the project rows', () => {
     const html = renderBody(
-      model({ projects: [{ name: 'app', path: 'D:/Repos/app', files: 12 }] }),
+      model({ projects: [{ name: 'app', root_path: 'D:/Repos/app', nodes: 12, edges: 34 }] }),
       'n1',
     )
     assert.match(html, /D:\/Repos\/app/)
-    assert.match(html, />12</)
+    assert.match(html, /12/)
+    assert.match(html, /34/)
+  })
+
+  // The field names below are the CLI's own (`root_path`, `nodes`, `edges`).
+  // Renaming them in ProjectSummary is what silently blanked the card before,
+  // so assert the real payload shape renders, not a convenient local shape.
+  it('renders the real CLI payload shape, not a renamed one', () => {
+    const html = renderBody(
+      model({
+        projects: [
+          { name: 'D-Hold-VS-Code', root_path: 'D:/Hold/VS Code', nodes: 19768, edges: 53018 },
+        ],
+      }),
+      'n1',
+    )
+    assert.match(html, /D:\/Hold\/VS Code/)
+    assert.match(html, /19,768/)
+    assert.match(html, /53,018/)
+  })
+
+  it('totals the metric cards across every project', () => {
+    const html = renderBody(
+      model({
+        projects: [
+          { name: 'a', root_path: '/a', nodes: 10, edges: 20, size_bytes: 1024 },
+          { name: 'b', root_path: '/b', nodes: 5, edges: 7, size_bytes: 1024 },
+        ],
+      }),
+      'n1',
+    )
+    assert.match(html, /15/)
+    assert.match(html, /27/)
+    assert.match(html, /2\.0 KB/)
+  })
+
+  it('shows a skeleton instead of an empty list while the CLI is still running', () => {
+    const html = renderBody(model({ loading: true }), 'n1')
+    assert.match(html, /skeleton/)
+    assert.doesNotMatch(html, /no projects/i)
+  })
+
+  it('reports MCP registration in the header chip, never a server run state', () => {
+    assert.match(renderBody(model(), 'n1'), /chip ok[^>]*>.*?registered/s)
+    const unregistered = computeState({
+      source: 'managed',
+      managedPath: MANAGED,
+      externalPath: null,
+      registration: { kind: 'missing' },
+    })
+    const html = renderBody(model({ state: unregistered }), 'n1')
+    assert.match(html, /not registered/)
+    // Variant C: the extension does not own the server process, so it must
+    // never claim one is running or offer to start one.
+    assert.doesNotMatch(html, /start.{0,12}server/i)
+    assert.doesNotMatch(html, /\buptime\b/i)
   })
 
   it('escapes a project name so markup in it cannot execute', () => {
     const html = renderBody(
-      model({ projects: [{ name: '<script>alert(1)</script>', path: '/x' }] }),
+      model({ projects: [{ name: '<script>alert(1)</script>', root_path: '/x' }] }),
       'n1',
     )
     assert.doesNotMatch(html, /<script>alert/)
@@ -187,6 +277,18 @@ describe('renderBody', () => {
     assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   })
 
+  it('escapes a hostile version and updateAvailable (both come from the CLI)', () => {
+    // The version strings are CLI stdout and a GitHub release tag — untrusted
+    // like every other field, and updateAvailable additionally lands inside a
+    // button label rather than plain text.
+    const html = renderBody(
+      model({ version: XSS_PAYLOAD, updateAvailable: XSS_PAYLOAD }),
+      'n1',
+    )
+    assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+    assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+  })
+
   it('escapes a hostile pathConflict.entryPath (from the MCP config file on disk)', () => {
     const state: ExtensionState = {
       kind: 'ready-managed',
@@ -215,7 +317,7 @@ describe('renderBody', () => {
 
   it('escapes a hostile project path', () => {
     const html = renderBody(
-      model({ projects: [{ name: 'app', path: XSS_PAYLOAD }] }),
+      model({ projects: [{ name: 'app', root_path: XSS_PAYLOAD }] }),
       'n1',
     )
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
@@ -226,7 +328,7 @@ describe('renderBody', () => {
 
   it('cannot break out of the data-project attribute with quotes/backtick', () => {
     const hostileName = '" onmouseover="alert(1)'
-    const html = renderBody(model({ projects: [{ name: hostileName, path: '/x' }] }), 'n1')
+    const html = renderBody(model({ projects: [{ name: hostileName, root_path: '/x' }] }), 'n1')
 
     // The literal payload must not appear unescaped (a real, unescaped
     // attribute-boundary quote followed by a live onmouseover=" attribute).
@@ -239,10 +341,11 @@ describe('renderBody', () => {
     assert.ok(buttonMatch, 'expected a remove button in the output')
     const tag = buttonMatch[0]
 
-    // Count raw (unescaped) double quotes: must be exactly the delimiters
-    // for class="remove" (2) and data-command="..." (2) and data-project="..." (2) = 6.
+    // Count raw (unescaped) double quotes: exactly two per attribute, and the
+    // tag carries five (class, title, aria-label, data-command, data-project).
+    // An injected attribute would push this past ten.
     const rawQuoteCount = (tag.match(/"/g) ?? []).length
-    assert.equal(rawQuoteCount, 6, `expected exactly 6 raw quotes in tag, got: ${tag}`)
+    assert.equal(rawQuoteCount, 10, `expected exactly 10 raw quotes in tag, got: ${tag}`)
 
     // No live onmouseover attribute was injected — only inert escaped text
     // inside the data-project value is permitted, never a real "onmouseover=".
@@ -255,7 +358,7 @@ describe('renderBody', () => {
 
   it('cannot break out of the data-project attribute with a single quote or backtick', () => {
     const hostileName = `'`+'`'+`onmouseover=alert(1)`
-    const html = renderBody(model({ projects: [{ name: hostileName, path: '/x' }] }), 'n1')
+    const html = renderBody(model({ projects: [{ name: hostileName, root_path: '/x' }] }), 'n1')
     const buttonMatch = /<button class="remove"[^>]*>/.exec(html)
     assert.ok(buttonMatch)
     const tag = buttonMatch[0]
