@@ -14,6 +14,13 @@ async function main(): Promise<void> {
     // success without ever loading extensionTestsPath.
     const executable = await downloadAndUnzipVSCode()
 
+    // ELECTRON_RUN_AS_NODE makes any Electron binary run as plain Node, so
+    // Code.exe parses VS Code's own flags as Node options and exits 9 with
+    // "bad option: --extensionTestsPath" before a single test runs. Some
+    // toolchains export it globally, so clear it here rather than expecting
+    // every caller to.
+    delete process.env.ELECTRON_RUN_AS_NODE
+
     // The host's stdout does not reliably reach the parent process, so the
     // suite reports its outcome through this file instead.
     const resultFile = resolve(

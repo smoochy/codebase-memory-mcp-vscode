@@ -3,4 +3,4 @@ out/
 dist/
 *.vsix
 # Electron host downloaded by @vscode/test-electron for the integration suite.
-.vscode-test/
+.vscode-test*/

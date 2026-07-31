@@ -57,7 +57,12 @@ function resolveState(storageDir: string): ExtensionState {
   })
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+/** What `vscode.extensions.getExtension(id).exports` yields. */
+export interface ExtensionApi {
+  panelHtmlForTests: () => string
+}
+
+export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const storageDir = context.globalStorageUri.fsPath
   const channel = vscode.window.createOutputChannel('Better Codebase Memory MCP')
   context.subscriptions.push(channel)
@@ -353,6 +358,12 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   void refresh()
+
+  // Returned to whoever activates the extension; VS Code surfaces it as
+  // `extension.exports`. The integration suite reads the panel's real markup
+  // through this, which is the only check that sees what the packaged bundle
+  // renders rather than what the current source would render.
+  return { panelHtmlForTests: () => panel.renderedHtml }
 }
 
 export function deactivate(): void {

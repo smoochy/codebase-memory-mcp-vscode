@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -16,6 +16,7 @@
     "onView:betterCmm.panel"
   ],
   "scripts": {
+    "vscode:prepublish": "node esbuild.mjs",
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "compile:test": "tsc -p tsconfig.test.json",

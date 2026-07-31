@@ -12,6 +12,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
 
   private view: vscode.WebviewView | undefined
   private model: PanelModel | undefined
+  private lastHtml = ''
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -42,6 +43,19 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     return this.view?.visible ?? false
   }
 
+  /**
+   * The markup last handed to VS Code.
+   *
+   * Exposed so an integration test can assert on what the running extension
+   * host actually rendered. Re-rendering from source in a test would miss the
+   * failure this exists to catch: a packaged bundle built from stale source,
+   * where every source-level test passes and the installed panel is still the
+   * old one.
+   */
+  get renderedHtml(): string {
+    return this.lastHtml
+  }
+
   private render(): void {
     if (this.view === undefined) {
       return
@@ -64,10 +78,11 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     }
     const nonce = makeNonce()
     const csp = contentSecurityPolicy(nonce, this.view.webview.cspSource)
-    this.view.webview.html =
+    this.lastHtml =
       `<!DOCTYPE html><html><head>` +
       `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
       `<style nonce="${nonce}">${PANEL_CSS}</style>` +
       `</head><body>${renderBody(model, nonce)}</body></html>`
+    this.view.webview.html = this.lastHtml
   }
 }
