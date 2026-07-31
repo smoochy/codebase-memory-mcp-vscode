@@ -4,7 +4,10 @@ import { allowedActions, type ExtensionState } from '../state/machine'
 export interface PanelModel {
   state: ExtensionState
   projects: ProjectSummary[]
+  /** Version of the CLI binary. */
   version: string | null
+  /** Version of this extension, read from its own manifest. */
+  extensionVersion?: string | null
   /** Version string when a newer release exists, otherwise null. */
   updateAvailable: string | null
   /**
@@ -153,7 +156,14 @@ function header(model: PanelModel): string {
     '</span>' +
     '<span class="brand-text">' +
     '<span class="brand-name">Codebase Memory</span>' +
-    '<span class="brand-sub">Knowledge Graph Engine</span>' +
+    // The extension's own version, distinct from the binary version shown in
+    // the bar below — without it there is no way to tell which build is
+    // installed.
+    `<span class="brand-sub">Knowledge Graph Engine${
+      model.extensionVersion === null || model.extensionVersion === undefined
+        ? ''
+        : ` · v${escapeHtml(model.extensionVersion)}`
+    }</span>` +
     '</span>' +
     '</div>' +
     statusChip(model.state) +
@@ -220,7 +230,10 @@ function clickHandlerScript(nonce: string): string {
 const vscode = acquireVsCodeApi()
 document.addEventListener('click', (event) => {
   const target = event.target
-  if (!(target instanceof HTMLElement)) return
+  // Element, not HTMLElement: every button carries an inline <svg> icon, and
+  // an SVG node is an SVGElement, so an HTMLElement guard silently dropped
+  // every click that landed on an icon.
+  if (!(target instanceof Element)) return
   const button = target.closest('[data-command]')
   if (!(button instanceof HTMLElement)) return
   const command = button.dataset.command

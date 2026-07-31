@@ -69,6 +69,12 @@ export interface ExtensionApi {
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const storageDir = context.globalStorageUri.fsPath
+  // Read from the manifest VS Code already parsed, so the panel can never
+  // disagree with the installed build.
+  const extensionVersion =
+    typeof (context.extension.packageJSON as { version?: unknown }).version === 'string'
+      ? ((context.extension.packageJSON as { version: string }).version)
+      : null
   const channel = vscode.window.createOutputChannel('Better Codebase Memory MCP')
   context.subscriptions.push(channel)
 
@@ -83,7 +89,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       return
     }
     void vscode.commands.executeCommand(command, project)
-  })
+  }, extensionVersion)
 
   const log = (message: string): void => {
     // Anything derived from a URL, header or process output goes through the
@@ -143,7 +149,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     }
 
-    panel.update({ state, projects, version, updateAvailable })
+    panel.update({ state, projects, version, updateAvailable, extensionVersion })
   }
 
   const fail = (what: string, cause: unknown): void => {
@@ -300,8 +306,33 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       const client = new CliClient(state.activePath, runProcess, 300_000)
       // Note: workspace folders are never touched here.
-      for (const folder of picked) {
-        await client.addProject(folder.fsPath)
+      const failures: string[] = []
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Indexing repositories' },
+        async (progress) => {
+          for (const [done, folder] of picked.entries()) {
+            progress.report({
+              message: `${folder.fsPath} (${String(done + 1)}/${String(picked.length)})`,
+            })
+            const result = await client.addProject(folder.fsPath)
+            if (!result.ok) {
+              // Silence here was the whole problem: indexing could fail on
+              // every folder and the panel just stayed empty.
+              failures.push(`${folder.fsPath}: ${result.error}`)
+              log(`addProject failed for ${folder.fsPath}: ${result.error}`)
+            }
+          }
+        },
+      )
+      if (failures.length > 0) {
+        void vscode.window.showErrorMessage(
+          `Could not index ${String(failures.length)} of ${String(picked.length)} repositories.`,
+          'View logs',
+        ).then((choice) => {
+          if (choice === 'View logs') {
+            channel.show()
+          }
+        })
       }
       await refresh()
     },

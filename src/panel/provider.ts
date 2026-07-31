@@ -17,6 +17,9 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly onCommand: (command: string, project: string | undefined) => void,
+    /** Shown in the header, including on the skeleton rendered before the
+     * first CLI call returns. */
+    private readonly extensionVersion: string | null = null,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -74,6 +77,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       projects: [],
       version: null,
       updateAvailable: null,
+      extensionVersion: this.extensionVersion,
       loading: true,
     }
     const nonce = makeNonce()

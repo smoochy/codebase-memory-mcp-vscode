@@ -58,6 +58,23 @@ describe('panel renders in a real extension host', () => {
     assert.ok(html.includes('--tint'), 'stylesheet missing the --tint surface variable')
   })
 
+  it('shows the extension version, so the installed build is identifiable', () => {
+    const declared = vscode.extensions.getExtension(EXTENSION_ID)?.packageJSON as {
+      version: string
+    }
+    assert.ok(
+      html.includes(`v${declared.version}`),
+      `panel does not show extension version ${declared.version}`,
+    )
+  })
+
+  it('binds clicks through an Element guard, so icon clicks still register', () => {
+    // The buttons wrap an inline <svg>; an SVG node is an SVGElement, so an
+    // HTMLElement guard dropped every click that landed on an icon.
+    assert.ok(html.includes('instanceof Element'))
+    assert.doesNotMatch(html, /target instanceof HTMLElement/)
+  })
+
   it('renders the rebuilt structure rather than the old flat list', () => {
     assert.ok(html.includes('brand-sub'), 'no header sub-title')
     assert.ok(html.includes('metrics'), 'no metric row')
