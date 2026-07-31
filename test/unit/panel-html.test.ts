@@ -281,6 +281,19 @@ describe('renderBody', () => {
     assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   })
 
+  it('escapes a hostile git branch (also straight from the CLI)', () => {
+    const html = renderBody(
+      model({
+        projects: [
+          { name: 'a', root_path: '/a', git: { branch: XSS_PAYLOAD } },
+        ],
+      }),
+      'n1',
+    )
+    assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+    assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+  })
+
   it('escapes a hostile version and updateAvailable (both come from the CLI)', () => {
     // The version strings are CLI stdout and a GitHub release tag — untrusted
     // like every other field, and updateAvailable additionally lands inside a

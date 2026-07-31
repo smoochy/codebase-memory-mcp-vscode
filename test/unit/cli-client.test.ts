@@ -22,7 +22,9 @@ describe('CliClient', () => {
     const client = new CliClient(BIN, stubRunner({ stdout }))
     const result = await client.listProjects()
     assert.equal(result.ok, true)
-    assert.deepEqual(result.ok ? result.value : null, [{ name: 'a', root_path: 'D:/a' }])
+    assert.deepEqual(result.ok ? result.value : null, [
+      { name: 'a', root_path: 'D:/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+    ])
   })
 
   // Each of these reached the panel and threw there before listProjects
@@ -43,6 +45,30 @@ describe('CliClient', () => {
       assert.deepEqual(result.ok ? result.value : null, [])
     })
   }
+
+  it('drops counts that are not finite numbers, which would throw on render', async () => {
+    // Both summing and formatting force ToPrimitive, so an object here throws
+    // inside the refresh timer and the panel stops updating for good.
+    const stdout =
+      '{"projects":[{"name":"a","root_path":"/a","nodes":{"toString":1,"valueOf":1},' +
+      '"edges":"lots","size_bytes":null}]}'
+    const client = new CliClient(BIN, stubRunner({ stdout }))
+    const result = await client.listProjects()
+    assert.ok(result.ok)
+    assert.deepEqual(result.value, [
+      { name: 'a', root_path: '/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+    ])
+  })
+
+  it('keeps counts that are real numbers', async () => {
+    const stdout = '{"projects":[{"name":"a","root_path":"/a","nodes":5,"edges":7,"size_bytes":9}]}'
+    const client = new CliClient(BIN, stubRunner({ stdout }))
+    const result = await client.listProjects()
+    assert.ok(result.ok)
+    assert.equal(result.value[0]?.nodes, 5)
+    assert.equal(result.value[0]?.edges, 7)
+    assert.equal(result.value[0]?.size_bytes, 9)
+  })
 
   it('returns an empty list when the CLI reports no projects', async () => {
     const client = new CliClient(BIN, stubRunner({ stdout: '{"projects":[]}' }))

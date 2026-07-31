@@ -33,6 +33,11 @@ export interface IndexStatus {
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
+/** Keep a count only when it is a real number; anything else becomes absent. */
+function finiteOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 /** Thin wrapper around the CLI. All calls are read-only except add and remove. */
 export class CliClient {
   constructor(
@@ -80,13 +85,24 @@ export class CliClient {
     }
     return {
       ok: true,
-      value: projects.filter(
-        (entry): entry is ProjectSummary =>
-          typeof entry === 'object' &&
-          entry !== null &&
-          typeof (entry as ProjectSummary).name === 'string' &&
-          typeof (entry as ProjectSummary).root_path === 'string',
-      ),
+      value: projects
+        .filter(
+          (entry): entry is ProjectSummary =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            typeof (entry as ProjectSummary).name === 'string' &&
+            typeof (entry as ProjectSummary).root_path === 'string',
+        )
+        // The counts are summed and formatted without further checks, and both
+        // operations force ToPrimitive. A non-number there throws during the
+        // render, inside the same unhandled refresh timer — so drop anything
+        // that is not a finite number here rather than at each use.
+        .map((entry) => ({
+          ...entry,
+          nodes: finiteOrUndefined(entry.nodes),
+          edges: finiteOrUndefined(entry.edges),
+          size_bytes: finiteOrUndefined(entry.size_bytes),
+        })),
     }
   }
 
