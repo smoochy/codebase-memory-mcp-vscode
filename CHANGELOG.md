@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.5]
+
+- Once the download is done the update button says "Installing..." rather than
+  holding at a number while the archive is unpacked and moved into place, and
+  it no longer flashes back to "Update to x" for a frame on the way out.
+- A newer release is now reported for a binary the extension does not manage:
+  the update button's place is taken by a notice in the same colour, not
+  clickable, saying on hover that this installation is the user's to update.
+  The release notes sit beside it as before. The extension still never writes
+  into an installation it does not own.
+
 ## [0.9.4]
 
 - The update button becomes the progress bar for the update it starts: the

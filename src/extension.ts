@@ -487,12 +487,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const installed = await client.version()
       version = installed.ok ? installed.value : null
 
-      // Skip the release lookup entirely when the answer cannot matter, so a
-      // user on an external binary never causes a request to GitHub.
+      // Skip the release lookup entirely when the answer cannot matter. An
+      // external binary is looked up too: the extension will not update it,
+      // but "there is a newer one" is still worth telling its owner.
       const checkForUpdates = setting('checkForUpdates', true)
-      if (version !== null && checkForUpdates && state.effectiveSource === 'managed') {
+      if (version !== null && checkForUpdates) {
         updateAvailable = updateOffer({
-          effectiveSource: state.effectiveSource,
           installedVersion: version,
           latestTag: await cachedLatestTag(),
           checkForUpdates,
@@ -833,14 +833,21 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
                 },
               }),
           )
-        } finally {
+        } catch (cause) {
+          // Only a failure puts the button back. Clearing it on the way out of
+          // a successful update flashed "Update to x" for one frame before the
+          // refresh below removed the button entirely.
           panel.setUpdateProgress(null)
+          throw cause
         }
         log(`update installed ${latestTag} (was ${installed.value})`)
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
         latestTagCache = latestTag
         await refresh()
+        // The button is gone with the offer; drop the percentage so the next
+        // update does not start from the last one's 100.
+        panel.setUpdateProgress(null)
         void vscode.window.showInformationMessage(
           `codebase-memory-mcp updated to ${latestTag}. Restart the MCP server ` +
             `(or reload the window) for the new binary to take effect.`,

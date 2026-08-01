@@ -205,6 +205,25 @@ describe('renderBody', () => {
     )
   })
 
+  it('tells an external binary about a release without offering to install it', () => {
+    const external = computeState({
+      source: 'external',
+      managedPath: null,
+      externalPath: '/usr/bin/cmm',
+      registration: { kind: 'present', path: '/usr/bin/cmm' },
+    })
+    const html = renderBody(model({ state: external, updateAvailable: '0.9.1' }), 'n1')
+    assert.match(html, /class="action warning hint" title="[^"]*update it yourself/)
+    assert.doesNotMatch(html, /data-command="betterCmm.updateBinary"/)
+    // The notes are worth reading whoever installs the release.
+    assert.match(html, /href="https:\/\/github.com\/[^"]+\/releases\/tag\/v0\.9\.1"/)
+  })
+
+  it('names the step once the download is done rather than holding at a number', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1', updateProgress: 90 }), 'n1')
+    assert.match(html, /<span class="pct">Installing\.\.\.<\/span>/)
+  })
+
   it('announces an available update', () => {
     assert.match(renderBody(model({ updateAvailable: '0.9.1' }), 'n1'), /0\.9\.1/)
   })

@@ -124,18 +124,18 @@ export function computeState(input: StateInput): ExtensionState {
  * Whether a newer release should be offered, and which one.
  *
  * Kept here rather than inline in the refresh loop because this is the rule
- * that decides whether the panel's update banner appears at all: an update is
- * only ever offered for a binary the extension owns, only when the user left
- * the check enabled, and only when both versions are actually known.
+ * that decides whether the panel says anything about a newer release at all:
+ * only when the user left the check enabled, and only when both versions are
+ * actually known. Who may act on it is a separate question, answered by
+ * `allowedActions` - an external binary is told, never updated.
  */
 export function updateOffer(input: {
-  effectiveSource: ExtensionState['effectiveSource']
   installedVersion: string | null
   latestTag: string | null
   checkForUpdates: boolean
 }): string | null {
-  const { effectiveSource, installedVersion, latestTag } = input
-  if (!input.checkForUpdates || effectiveSource !== 'managed') {
+  const { installedVersion, latestTag } = input
+  if (!input.checkForUpdates) {
     return null
   }
   if (installedVersion === null || latestTag === null) {

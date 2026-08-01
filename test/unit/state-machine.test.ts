@@ -125,7 +125,6 @@ describe('computeState', () => {
 
 describe('updateOffer', () => {
   const base = {
-    effectiveSource: 'managed' as const,
     installedVersion: '0.9.0',
     latestTag: 'v1.0.0',
     checkForUpdates: true,
@@ -143,9 +142,6 @@ describe('updateOffer', () => {
     assert.equal(updateOffer({ ...base, installedVersion: '1.1.0' }), null)
   })
 
-  it('never offers an update for an external binary, however new the release', () => {
-    assert.equal(updateOffer({ ...base, effectiveSource: 'external' }), null)
-  })
 
   it('respects the checkForUpdates setting', () => {
     assert.equal(updateOffer({ ...base, checkForUpdates: false }), null)
@@ -161,8 +157,10 @@ describe('updateOffer', () => {
     assert.equal(updateOffer({ ...base, installedVersion: null }), null)
   })
 
-  it('offers nothing before a binary is resolved at all', () => {
-    assert.equal(updateOffer({ ...base, effectiveSource: null }), null)
+  // The source no longer gates the offer - an external binary is told about a
+  // release too - but `allowedActions` still decides who gets a button.
+  it('offers the tag whatever the binary source, the button is gated elsewhere', () => {
+    assert.equal(updateOffer(base), 'v1.0.0')
   })
 })
 

@@ -148,8 +148,39 @@ function updateButton(version: string, percent: number | null): string {
     'data-command="betterCmm.updateBinary">' +
     `<span class="fill" style="width:${String(shown)}%"></span>` +
     `<span class="label">${icon('arrowUp')}<span>${escapeHtml(`Update to ${version}`)}</span></span>` +
-    `<span class="pct">${String(shown)}%</span>` +
+    `<span class="pct">${escapeHtml(progressLabel(shown))}</span>` +
     '</button>'
+  )
+}
+
+/**
+ * Where the download ends and the installation begins, on the button's scale.
+ *
+ * Matches `DOWNLOAD_SHARE` in the install manager. Past it there is nothing
+ * left to count - the archive is being unpacked and moved into place - so the
+ * button says what is happening instead of holding at a number.
+ */
+const INSTALLING_AT = 90
+
+function progressLabel(percent: number): string {
+  return percent >= INSTALLING_AT ? 'Installing...' : `${String(percent)}%`
+}
+
+/**
+ * The same slot as the update button, for a binary the extension does not own.
+ *
+ * Not a button: updating someone else's installation is not ours to do. It
+ * carries no `data-command`, so the click handler passes over it, and says on
+ * hover why it cannot be pressed.
+ */
+function updateHint(version: string): string {
+  const tip =
+    `codebase-memory-mcp ${version} is available. This binary is managed ` +
+    'outside the extension, so update it yourself.'
+  return (
+    `<div class="action warning hint" title="${escapeHtml(tip)}">` +
+    `${icon('arrowUp')}<span>${escapeHtml(`${version} available`)}</span>` +
+    '</div>'
   )
 }
 
@@ -518,7 +549,10 @@ function setUpdateProgress(percent) {
   const shown = Math.max(0, Math.min(100, Math.round(percent)))
   button.classList.add('progress')
   button.querySelector('.fill').style.width = shown + '%'
-  button.querySelector('.pct').textContent = shown + '%'
+  // Same threshold as the server-rendered label: past the download there is
+  // nothing left to count, so the button names the step instead.
+  button.querySelector('.pct').textContent =
+    shown >= ${String(INSTALLING_AT)} ? 'Installing...' : shown + '%'
 }
 window.addEventListener('message', (event) => {
   const message = event.data
@@ -770,8 +804,14 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // the same colour as every other action is one nobody notices. The release
   // notes sit beside it so the user can read what changes before taking it.
   const updateActions: string[] = []
-  if (actions.showUpdateButton && model.updateAvailable !== null) {
-    updateActions.push(updateButton(model.updateAvailable, model.updateProgress ?? null))
+  if (model.updateAvailable !== null) {
+    // An external binary gets the news and the notes, but no button: the
+    // extension never writes into an installation it does not own.
+    updateActions.push(
+      actions.showUpdateButton
+        ? updateButton(model.updateAvailable, model.updateProgress ?? null)
+        : updateHint(model.updateAvailable),
+    )
     // The version string comes from the CLI, and `releaseNotesUrl` refuses to
     // build a URL out of one that is not a plain tag. Rendering the rest of the
     // panel matters more than the link, so a rejected version drops the link.
@@ -998,6 +1038,10 @@ section h2 {
   border-color: rgba(var(--warn-rgb), .30);
 }
 .action.warning:hover { background: rgba(var(--warn-rgb), .18); }
+/* The external-binary notice sits in the button's slot but is not one: it must
+   not light up under the pointer or claim to be pressable. */
+.action.hint { cursor: help; }
+.action.hint:hover { background: rgba(var(--warn-rgb), .10); }
 /* The update button is its own progress bar: .fill is the bar, .label and .pct
    are the two faces, and the progress class decides which one shows. */
 .action.update { position: relative; overflow: hidden; }
