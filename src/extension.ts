@@ -4,6 +4,7 @@ import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
 import { CliClient, type ProjectSummary } from './cli/client'
+import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, uninstallCommandFor } from './constants'
 import { LogFile } from './log-file'
@@ -14,7 +15,7 @@ import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter } from 'node:path'
+import { delimiter, dirname } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
@@ -80,8 +81,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(channel)
 
   let projects: ProjectSummary[] = []
+  let cliSettings: CliSetting[] = []
+  /**
+   * Set once registration succeeds and never cleared.
+   *
+   * The MCP entry is read when the host starts, so writing it mid-session
+   * leaves the server unreachable until a reload. Without saying so, a
+   * successful setup looks broken.
+   */
+  let restartRequired = false
 
-  const panel = new PanelProvider(context.extensionUri, (command, project) => {
+  const panel = new PanelProvider(context.extensionUri, (command, project, value) => {
     // The webview is attacker-influenced content (project names come out of
     // the wrapped CLI's JSON), so its command string must be checked against
     // the fixed set the extension actually registered before it is executed.
@@ -89,7 +99,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       channel.appendLine(`ignored unknown command from webview: ${command}`)
       return
     }
-    void vscode.commands.executeCommand(command, project)
+    void vscode.commands.executeCommand(command, project, value)
   }, extensionVersion)
 
   // context.logUri is VS Code's own per-extension log directory, so the file
@@ -140,6 +150,31 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }
   }
 
+  /**
+   * Read the CLI's own settings.
+   *
+   * Two calls: `config` carries the defaults and descriptions, `config list`
+   * the current values. Both are plain text, not JSON, so they are parsed
+   * rather than decoded.
+   */
+  const refreshCliSettings = async (): Promise<void> => {
+    const state = resolveState(storageDir)
+    if (state.activePath === null) {
+      cliSettings = []
+      panel.updateCliSettings(cliSettings)
+      return
+    }
+    const client = new CliClient(state.activePath, runProcess)
+    const [keys, values] = await Promise.all([client.configText([]), client.configText(['list'])])
+    if (!keys.ok || !values.ok) {
+      log(`reading CLI settings failed: ${keys.ok ? values.ok || '' : keys.error}`)
+      cliSettings = []
+    } else {
+      cliSettings = mergeSettings(parseConfigKeys(keys.value), parseConfigList(values.value))
+    }
+    panel.updateCliSettings(cliSettings)
+  }
+
   const refresh = async (): Promise<void> => {
     const state = resolveState(storageDir)
     let version: string | null = null
@@ -166,7 +201,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     }
 
-    panel.update({ state, projects, version, updateAvailable, extensionVersion })
+    panel.update({ state, projects, version, updateAvailable, extensionVersion, restartRequired })
   }
 
   /**
@@ -237,7 +272,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     onStep: report,
   })
 
-  const handlers: Record<(typeof COMMAND_IDS)[number], (arg?: string) => void | Promise<void>> = {
+  const handlers: Record<
+    (typeof COMMAND_IDS)[number],
+    (arg?: string, value?: string) => void | Promise<void>
+  > = {
     'betterCmm.runSetup': async () => {
       const state = resolveState(storageDir)
       if (refuseIfExternal(state, 'Setup')) {
@@ -271,6 +309,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // so stopping after the download and asking the user to run a second
         // command was the flow contradicting its own description.
         const registered = await registerMcp()
+        if (registered.ok) {
+          restartRequired = true
+        }
         await refresh()
 
         if (registered.ok) {
@@ -298,6 +339,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
     'betterCmm.installCli': async () => {
       const result = await registerMcp()
+      if (result.ok) {
+        restartRequired = true
+      }
       await refresh()
       if (!result.ok) {
         fail('Register MCP server', new Error(result.error))
@@ -322,8 +366,51 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'betterCmm.showUninstall': () => {
       panel.setView('uninstall')
     },
-    'betterCmm.closeUninstall': () => {
+    'betterCmm.closeUninstall': async () => {
       panel.setView('main')
+      // Refresh on the way back: the user may have run the command in a
+      // terminal while the screen was open, so the panel would otherwise show
+      // a binary that is no longer there.
+      await refresh()
+    },
+    'betterCmm.showSettings': async () => {
+      panel.setView('settings')
+      await refreshCliSettings()
+    },
+    'betterCmm.closeScreen': async () => {
+      panel.setView('main')
+      await refresh()
+    },
+    'betterCmm.copyBinaryDir': async () => {
+      const active = resolveState(storageDir).activePath
+      if (active === null) {
+        return
+      }
+      // The folder, not the binary: this is for pasting into a terminal or a
+      // PATH entry, where the executable name is in the way.
+      const folder = dirname(active)
+      await vscode.env.clipboard.writeText(folder)
+      void vscode.window.showInformationMessage(`Copied ${folder}`)
+    },
+    'betterCmm.setCliSetting': async (key, value) => {
+      if (key === undefined || value === undefined) {
+        return
+      }
+      const state = resolveState(storageDir)
+      if (state.activePath === null) {
+        return
+      }
+      // The key must be one the CLI itself reported. A webview message is not
+      // a trustworthy source for something that becomes a CLI argument.
+      if (!cliSettings.some((setting) => setting.key === key)) {
+        log(`ignored unknown CLI setting: ${key}`)
+        return
+      }
+      const result = await new CliClient(state.activePath, runProcess).setConfig(key, value)
+      if (!result.ok) {
+        fail(`Setting ${key}`, new Error(result.error))
+      }
+      await refreshCliSettings()
     },
     'betterCmm.updateBinary': async () => {
       const state = resolveState(storageDir)
@@ -494,7 +581,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   for (const id of COMMAND_IDS) {
     context.subscriptions.push(
-      vscode.commands.registerCommand(id, (arg?: string) => handlers[id](arg)),
+      vscode.commands.registerCommand(id, (arg?: string, value?: string) =>
+        handlers[id](arg, value),
+      ),
     )
   }
 

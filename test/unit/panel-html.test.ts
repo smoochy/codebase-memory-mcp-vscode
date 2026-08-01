@@ -281,6 +281,116 @@ describe('renderBody', () => {
     assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   })
 
+  describe('project cards', () => {
+    const card = (root: string, branch?: string): string =>
+      renderBody(
+        model({
+          projects: [
+            {
+              name: 'D-Hold-VS-Code-openrouter-model-list',
+              root_path: root,
+              nodes: 1,
+              edges: 1,
+              ...(branch === undefined ? {} : { git: { branch } }),
+            },
+          ],
+        }),
+        'n1',
+      )
+
+    it('titles the card with the folder, not the hyphenated CLI name', () => {
+      const html = card('D:/Hold/VS Code/openrouter-model-list')
+      assert.match(html, /class="card-name"[^>]*>openrouter-model-list</)
+      // The CLI name is still reachable, because commands need it verbatim.
+      assert.match(html, /Project name: D-Hold-VS-Code-openrouter-model-list/)
+    })
+
+    it('shows the parent folder rather than repeating the full path', () => {
+      const html = card('D:/Hold/VS Code/openrouter-model-list')
+      assert.match(html, /class="card-path"[^>]*>D:\/Hold\/VS Code</)
+    })
+
+    it('explains DETACHED rather than leaving it as a bare word', () => {
+      assert.match(card('/a/b', 'DETACHED'), /detached HEAD/)
+    })
+
+    it('names the branch for an ordinary checkout', () => {
+      assert.match(card('/a/b', 'main'), /Git branch indexed: main/)
+    })
+  })
+
+  describe('settings screen', () => {
+    const settingsModel = (cliSettings: PanelModel['cliSettings']): PanelModel => ({
+      state: {
+        kind: 'ready-managed',
+        activePath: '/bin/cmm',
+        effectiveSource: 'managed',
+        notice: null,
+        pathConflict: null,
+      },
+      projects: [],
+      version: '0.9.0',
+      updateAvailable: null,
+      view: 'settings',
+      cliSettings,
+    })
+
+    it('offers a two-option select for a boolean, not free text', () => {
+      const html = renderBody(
+        settingsModel([
+          { key: 'auto_watch', value: 'true', default: 'true', description: 'Watch git' },
+        ]),
+        'n1',
+      )
+      assert.match(html, /<select class="ctl" data-setting="auto_watch">/)
+      assert.match(html, /<option value="true" selected>/)
+      assert.match(html, /<option value="false">/)
+    })
+
+    it('uses a text field for a non-boolean', () => {
+      const html = renderBody(
+        settingsModel([
+          { key: 'auto_index_limit', value: '50000', default: '50000', description: '' },
+        ]),
+        'n1',
+      )
+      assert.match(html, /<input class="ctl" type="text" data-setting="auto_index_limit"/)
+    })
+
+    it('marks a value that no longer matches its default', () => {
+      const html = renderBody(
+        settingsModel([{ key: 'auto_watch', value: 'false', default: 'true', description: '' }]),
+        'n1',
+      )
+      assert.match(html, /modified/)
+      assert.match(html, /Default: true/)
+    })
+
+    it('keeps the uninstall action out of the ordinary settings list', () => {
+      const html = renderBody(settingsModel([]), 'n1')
+      assert.match(html, /<section class="danger">/)
+      assert.match(html, /also removes its MCP registration/)
+    })
+
+    it('escapes a hostile setting key and value', () => {
+      const html = renderBody(
+        settingsModel([{ key: XSS_PAYLOAD, value: XSS_PAYLOAD, default: '', description: '' }]),
+        'n1',
+      )
+      assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+    })
+  })
+
+  it('warns that a reload is needed once registration has been written', () => {
+    const html = renderBody(model({ restartRequired: true }), 'n1')
+    assert.match(html, /Reload VS Code/)
+  })
+
+  it('does not offer a second Refresh beside the one in the title bar', () => {
+    const html = renderBody(model({}), 'n1')
+    assert.doesNotMatch(html, /data-command="betterCmm\.refresh"/)
+  })
+
   describe('uninstall screen', () => {
     const uninstallModel = (activePath: string | null): PanelModel => ({
       state: {

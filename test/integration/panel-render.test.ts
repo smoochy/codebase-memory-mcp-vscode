@@ -108,14 +108,11 @@ describe('panel renders in a real extension host', () => {
     }
     const title = manifest.contributes.menus?.['view/title'] ?? []
     const commands = title.map((entry) => entry.command)
-    assert.ok(commands.includes('betterCmm.openSettings'), 'no settings gear in the title bar')
+    // The gear opens the panel's own settings screen rather than VS Code's,
+    // because the CLI's keys are discovered at runtime and a static settings
+    // UI cannot render them.
+    assert.ok(commands.includes('betterCmm.showSettings'), 'no settings gear in the title bar')
     assert.ok(commands.includes('betterCmm.refresh'), 'no refresh in the title bar')
-    // The CLI uninstall workflow has to be reachable from the UI; it existed
-    // as a command but nothing surfaced it.
-    assert.ok(
-      commands.includes('betterCmm.showUninstall'),
-      'no CLI uninstall entry in the title bar menu',
-    )
     for (const entry of title) {
       assert.equal(entry.when, 'view == betterCmm.panel')
     }

@@ -1,6 +1,7 @@
 import { upstreamRepoUrl } from '../binary/assets'
 import { uninstallCommandFor } from '../constants'
 import type { ProjectSummary } from '../cli/client'
+import type { CliSetting } from '../cli/configParse'
 import { allowedActions, type ExtensionState } from '../state/machine'
 
 export interface PanelModel {
@@ -18,8 +19,12 @@ export interface PanelModel {
    * than staying blank and reading as a hang.
    */
   loading?: boolean
-  /** Which screen the panel shows. Uninstall replaces the whole view. */
-  view?: 'main' | 'uninstall'
+  /** Which screen the panel shows. Anything but `main` replaces the whole view. */
+  view?: 'main' | 'uninstall' | 'settings'
+  /** True after registering, until the window reloads and the entry takes effect. */
+  restartRequired?: boolean
+  /** CLI settings from `config list`, shown on the settings screen. */
+  cliSettings?: CliSetting[]
 }
 
 /**
@@ -91,6 +96,8 @@ const ICONS: Record<string, string> = {
   reindex: '<ellipse cx="8" cy="4" rx="4.6" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.4 4v8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8V4M3.4 8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   trash: '<path d="M2.8 4.4h10.4M6.2 4.4V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.2M4.3 4.4v8a1.2 1.2 0 0 0 1.2 1.2h5a1.2 1.2 0 0 0 1.2-1.2v-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  gear: '<circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7L3.6 3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+  back: '<path d="M10 3l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
 }
 
 function icon(name: keyof typeof ICONS | string): string {
@@ -168,8 +175,15 @@ function subVersions(model: PanelModel): string {
     const hint =
       path === null
         ? 'Path unknown'
-        : `${path}${model.state.effectiveSource === null ? '' : ` (${model.state.effectiveSource})`}`
-    parts.push(`<span class="ver" title="${escapeHtml(hint)}">v${escapeHtml(model.version)}</span>`)
+        : `${path}${
+            model.state.effectiveSource === null ? '' : ` (${model.state.effectiveSource})`
+          }\nClick to copy the folder`
+    // A button, not a span: the path is worth having in the clipboard, and a
+    // tooltip is the one thing you cannot copy out of.
+    parts.push(
+      `<button class="ver" data-command="betterCmm.copyBinaryDir" title="${escapeHtml(hint)}">` +
+        `v${escapeHtml(model.version)}</button>`,
+    )
   }
 
   if (model.extensionVersion !== null && model.extensionVersion !== undefined) {
@@ -232,8 +246,15 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
         '<div class="card-head">' +
         '<span class="dot"></span>' +
         '<div class="card-text">' +
-        `<div class="card-name">${name}</div>` +
-        `<div class="card-path">${escapeHtml(project.root_path)}</div>` +
+        // The folder is what the user recognises. The CLI's own name is the
+        // whole path with separators turned into hyphens, which is unreadable
+        // at this width and repeats the line below it — it moves to the
+        // tooltip, where it is still available for the CLI commands that need
+        // it verbatim.
+        `<div class="card-name" title="${escapeHtml(`Project name: ${project.name}`)}">` +
+        `${escapeHtml(folderName(project.root_path))}</div>` +
+        `<div class="card-path" title="${escapeHtml(project.root_path)}">` +
+        `${escapeHtml(parentPath(project.root_path))}</div>` +
         '</div>' +
         `<button class="remove" title="Remove from index" aria-label="Remove ${name} from the index" ` +
         `data-command="betterCmm.removeProject" data-project="${name}">${icon('trash')}</button>` +
@@ -250,14 +271,51 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
           : '<span class="sep">·</span>' +
             `<span>${escapeHtml(formatBytes(project.size_bytes))}</span>`) +
         (typeof project.git?.branch === 'string' && project.git.branch.length > 0
-          ? '<span class="sep">·</span>' +
-            `<span class="branch">${escapeHtml(project.git.branch)}</span>`
+          ? '<span class="sep">·</span>' + branchTag(project.git.branch)
           : '') +
         '</div>' +
         '</div>'
       )
     })
     .join('')
+}
+
+/**
+ * Path helpers that tolerate a payload the CLI should not have sent.
+ *
+ * `listProjects` filters non-string paths out, but these must not be the one
+ * place a malformed payload can still throw the whole render.
+ */
+function trimmedPath(rootPath: string): string {
+  return typeof rootPath === 'string' ? rootPath.replace(/[\\/]+$/, '') : ''
+}
+
+/** The last path segment — what the user actually calls the repository. */
+function folderName(rootPath: string): string {
+  const trimmed = trimmedPath(rootPath)
+  const parts = trimmed.split(/[\\/]/)
+  return parts[parts.length - 1] ?? trimmed
+}
+
+/** Everything above the folder, so the two lines do not repeat each other. */
+function parentPath(rootPath: string): string {
+  const trimmed = trimmedPath(rootPath)
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return cut <= 0 ? trimmed : trimmed.slice(0, cut)
+}
+
+/**
+ * The git branch, with an explanation attached.
+ *
+ * `DETACHED` in particular reads as an error to anyone who has not met a
+ * detached HEAD before, so it says what it means rather than assuming.
+ */
+function branchTag(branch: string): string {
+  const hint =
+    branch === 'DETACHED'
+      ? 'Git: no branch checked out (detached HEAD) — the index follows this exact commit'
+      : `Git branch indexed: ${branch}`
+  return `<span class="branch" title="${escapeHtml(hint)}">${escapeHtml(branch)}</span>`
 }
 
 /**
@@ -278,6 +336,15 @@ document.addEventListener('click', (event) => {
   const command = button.dataset.command
   if (command === undefined) return
   vscode.postMessage({ command, project: button.dataset.project })
+})
+// Settings write on commit rather than on every keystroke: change fires on
+// blur or Enter for a text field, and immediately for a select.
+document.addEventListener('change', (event) => {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) return
+  const key = target.dataset.setting
+  if (key === undefined) return
+  vscode.postMessage({ command: 'betterCmm.setCliSetting', project: key, value: target.value })
 })
 </script>`
 }
@@ -312,11 +379,95 @@ function uninstallScreen(model: PanelModel, nonce: string): string {
   )
 }
 
+/**
+ * One CLI setting as a labelled control.
+ *
+ * A boolean gets a two-option select rather than free text, because the CLI
+ * accepts only `true` and `false` and a typo is otherwise only discovered when
+ * the write fails.
+ */
+function settingRow(setting: CliSetting): string {
+  const isBoolean = setting.value === 'true' || setting.value === 'false'
+  const control = isBoolean
+    ? `<select class="ctl" data-setting="${escapeHtml(setting.key)}">` +
+      ['true', 'false']
+        .map(
+          (option) =>
+            `<option value="${option}"${setting.value === option ? ' selected' : ''}>` +
+            `${option}</option>`,
+        )
+        .join('') +
+      '</select>'
+    : `<input class="ctl" type="text" data-setting="${escapeHtml(setting.key)}" ` +
+      `value="${escapeHtml(setting.value)}">`
+
+  const modified = setting.default !== '' && setting.value !== setting.default
+  return (
+    '<div class="setting">' +
+    `<label class="setting-key">${escapeHtml(setting.key)}` +
+    (modified
+      ? `<span class="badge" title="${escapeHtml(`Default: ${setting.default}`)}">modified</span>`
+      : '') +
+    '</label>' +
+    control +
+    (setting.description === ''
+      ? ''
+      : `<p class="setting-desc">${escapeHtml(setting.description)}</p>`) +
+    '</div>'
+  )
+}
+
+/**
+ * The settings screen.
+ *
+ * VS Code's own settings UI can only render static declarations, so the CLI's
+ * own keys — which are discovered at runtime from `config list` — could never
+ * appear there. Both live here instead, with the destructive action last and
+ * visually separated.
+ */
+function settingsScreen(model: PanelModel, nonce: string): string {
+  const cliSettings = model.cliSettings ?? []
+  return (
+    '<main>' +
+    header(model) +
+    section(
+      'Extension',
+      '<p class="lead">These belong to the extension and are stored by VS Code.</p>' +
+        `<div class="actions">${button(
+          'betterCmm.openSettings',
+          'Open extension settings',
+          'gear',
+        )}</div>`,
+    ) +
+    section(
+      'Engine',
+      '<p class="lead">These belong to the CLI itself and apply to every editor ' +
+        'that uses it, not just this window.</p>' +
+        (cliSettings.length === 0
+          ? '<p class="empty">No CLI settings available — is the binary installed?</p>'
+          : cliSettings.map(settingRow).join('')),
+    ) +
+    '<section class="danger">' +
+    '<h2>Uninstall</h2>' +
+    '<p class="lead">Removing the CLI also removes its MCP registration, so no ' +
+    'editor will keep pointing at a binary that is gone. Your indexes are a ' +
+    'separate question the command asks you directly.</p>' +
+    `<div class="actions">${button('betterCmm.showUninstall', 'Uninstall CLI…', 'trash', 'danger')}</div>` +
+    '</section>' +
+    `<div class="actions">${button('betterCmm.closeScreen', 'Back', 'back')}</div>` +
+    '</main>' +
+    clickHandlerScript(nonce)
+  )
+}
+
 /** Header, notices, actions, project list. Static markup, no framework. */
 export function renderBody(model: PanelModel, nonce: string): string {
   const { state } = model
   if (model.view === 'uninstall') {
     return uninstallScreen(model, nonce)
+  }
+  if (model.view === 'settings') {
+    return settingsScreen(model, nonce)
   }
   const actions = allowedActions(state)
   const loading = model.loading === true
@@ -359,15 +510,31 @@ export function renderBody(model: PanelModel, nonce: string): string {
     parts.push(notice('warning', 'The binary is not registered as an MCP server.'))
   }
 
+  // Registering only takes effect once the extension host restarts, so saying
+  // it succeeded without saying that would leave the user looking for a server
+  // that is not there yet.
+  if (model.restartRequired === true) {
+    parts.push(
+      notice(
+        'warning',
+        'Reload VS Code to finish registering the MCP server — it is not reachable until then.',
+      ),
+    )
+  }
+
   const buttons: string[] = []
   if (actions.showInstallButton) {
     buttons.push(button('betterCmm.installCli', 'Register MCP server', 'link', 'primary'))
   }
   if (actions.showClipboardHint) {
     parts.push(
-      notice('info', 'Run codebase-memory-mcp install in a terminal to register the server.'),
+      notice(
+        'info',
+        'This binary is not managed by the extension, so the extension does not modify it. ' +
+          'Run the register command yourself to finish setup.',
+      ),
     )
-    buttons.push(button('betterCmm.copyInstallCommand', 'Copy install command', 'copy'))
+    buttons.push(button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'))
   }
   if (actions.showUpdateButton && model.updateAvailable !== null) {
     buttons.push(
@@ -380,7 +547,9 @@ export function renderBody(model: PanelModel, nonce: string): string {
   if (model.projects.length > 0) {
     buttons.push(button('betterCmm.reindex', 'Reindex', 'reindex'))
   }
-  buttons.push(button('betterCmm.refresh', 'Refresh', 'refresh'))
+  // No Refresh button here: the title bar already has one, running the same
+  // command, and two identical controls in one view only raise the question of
+  // how they differ.
   buttons.push(button('betterCmm.showLogs', 'View logs', 'logs'))
 
   parts.push(section('Actions', `<div class="actions">${buttons.join('')}</div>`))
@@ -587,7 +756,43 @@ section h2 {
 .card-stats .branch {
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--accent);
+  /* Same cue as the CLI version: dotted means there is a tooltip worth reading. */
+  border-bottom: 1px dotted currentColor; cursor: help;
 }
+/* The version is a button but must read as part of the sub-title, not a control. */
+button.ver {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  border-bottom: 1px dotted currentColor; cursor: pointer;
+}
+.setting { padding: 0 12px 12px; }
+.setting-key {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; margin-bottom: 4px;
+}
+.badge {
+  font-size: 9px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 999px; cursor: help;
+  color: var(--warn); background: rgba(var(--warn-rgb), .13);
+}
+.ctl {
+  width: 100%; box-sizing: border-box; padding: 5px 7px; border-radius: var(--r);
+  font: inherit; font-size: 11px;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  background: var(--vscode-input-background, var(--surface));
+  border: 1px solid var(--vscode-input-border, var(--line));
+}
+.ctl:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.setting-desc { margin: 4px 0 0; font-size: 10px; color: var(--muted); line-height: 1.5; }
+/* The destructive section is set apart rather than sitting in the same list. */
+/* Full-width so the children keep the same 12px gutter as every other
+   section; the rule only adds the separating line above it. */
+.danger {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid rgba(var(--err-rgb), .35);
+}
+.danger h2 { color: var(--err); }
+.action.danger { color: var(--err); }
+.action.danger:hover { background: rgba(var(--err-rgb), .12); }
 .skeleton { display: flex; flex-direction: column; gap: 7px; }
 .sk { display: block; height: 9px; border-radius: 4px; background: var(--surface-hi); animation: sk 1.3s ease-in-out infinite; }
 .sk-1 { width: 45%; }

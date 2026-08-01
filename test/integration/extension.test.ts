@@ -35,7 +35,15 @@ describe('extension activation', () => {
   it('copies the uninstall command to the clipboard without opening a terminal', async () => {
     const terminalsBefore = vscode.window.terminals.length
     await vscode.commands.executeCommand('betterCmm.copyUninstallCommand')
-    assert.equal(await vscode.env.clipboard.readText(), 'codebase-memory-mcp uninstall')
+    // Bound to whichever binary this machine resolved, or the bare command
+    // when none did. Both end in the subcommand and neither opens a terminal,
+    // which is the part that matters here.
+    const copied = await vscode.env.clipboard.readText()
+    assert.match(copied, / uninstall$/)
+    assert.ok(
+      copied === 'codebase-memory-mcp uninstall' || copied.includes('"'),
+      `unexpected uninstall command: ${copied}`,
+    )
     assert.equal(vscode.window.terminals.length, terminalsBefore)
   })
 

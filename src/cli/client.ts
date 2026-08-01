@@ -126,6 +126,29 @@ export class CliClient {
     return this.json<unknown>(['cli', 'delete_project', `--project=${name}`, '--json'])
   }
 
+  /** Raw stdout of a `config` subcommand, which is plain text, not JSON. */
+  async configText(args: string[]): Promise<CliResult<string>> {
+    try {
+      const output = await this.run(this.binaryPath, ['config', ...args], this.timeoutMs)
+      if (output.code !== 0) {
+        return { ok: false, error: output.stderr.trim() || `config exited with ${String(output.code)}` }
+      }
+      return { ok: true, value: output.stdout }
+    } catch (cause) {
+      return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
+    }
+  }
+
+  /**
+   * Write one setting.
+   *
+   * Key and value are separate argv elements the CLI expects positionally, and
+   * spawn runs without a shell, so neither can be reinterpreted.
+   */
+  async setConfig(key: string, value: string): Promise<CliResult<string>> {
+    return this.configText(['set', key, value])
+  }
+
   async version(): Promise<CliResult<string>> {
     try {
       const output = await this.run(this.binaryPath, ['--version'], this.timeoutMs)

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import type { CliSetting } from '../cli/configParse'
 import { contentSecurityPolicy, renderBody, PANEL_CSS, type PanelModel } from './html'
 
 function makeNonce(): string {
@@ -13,11 +14,16 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined
   private model: PanelModel | undefined
   private lastHtml = ''
-  private view_: 'main' | 'uninstall' = 'main'
+  private view_: 'main' | 'uninstall' | 'settings' = 'main'
+  private cliSettings: CliSetting[] = []
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly onCommand: (command: string, project: string | undefined) => void,
+    private readonly onCommand: (
+      command: string,
+      project: string | undefined,
+      value?: string,
+    ) => void,
     /** Shown in the header, including on the skeleton rendered before the
      * first CLI call returns. */
     private readonly extensionVersion: string | null = null,
@@ -26,26 +32,44 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] }
-    view.webview.onDidReceiveMessage((message: { command?: unknown; project?: unknown }) => {
-      if (typeof message.command === 'string') {
-        this.onCommand(
-          message.command,
-          typeof message.project === 'string' ? message.project : undefined,
-        )
-      }
-    })
+    view.webview.onDidReceiveMessage(
+      (message: { command?: unknown; project?: unknown; value?: unknown }) => {
+        if (typeof message.command === 'string') {
+          this.onCommand(
+            message.command,
+            typeof message.project === 'string' ? message.project : undefined,
+            typeof message.value === 'string' ? message.value : undefined,
+          )
+        }
+      },
+    )
     this.render()
   }
 
   update(model: PanelModel): void {
     // The view is panel state, not CLI state, so a refresh landing while the
     // uninstall screen is open must not throw the user back to the main view.
-    this.model = { ...model, view: this.view_ }
+    this.model = { ...model, view: this.view_, cliSettings: this.cliSettings }
     this.render()
   }
 
-  /** Switch between the main panel and the uninstall screen. */
-  setView(view: 'main' | 'uninstall'): void {
+  /**
+   * Store the CLI's settings for the settings screen.
+   *
+   * Held separately from `update`, which runs on the refresh timer: reading
+   * them costs two extra process launches, so it happens when the screen is
+   * opened or a value is written, not every thirty seconds.
+   */
+  updateCliSettings(cliSettings: CliSetting[]): void {
+    this.cliSettings = cliSettings
+    if (this.model !== undefined) {
+      this.model = { ...this.model, cliSettings }
+    }
+    this.render()
+  }
+
+  /** Switch between the main panel and a full-screen view. */
+  setView(view: 'main' | 'uninstall' | 'settings'): void {
     this.view_ = view
     if (this.model !== undefined) {
       this.model = { ...this.model, view }
@@ -92,6 +116,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       extensionVersion: this.extensionVersion,
       loading: true,
       view: this.view_,
+      cliSettings: this.cliSettings,
     }
     const nonce = makeNonce()
     const csp = contentSecurityPolicy(nonce, this.view.webview.cspSource)
