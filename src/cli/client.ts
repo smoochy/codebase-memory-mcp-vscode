@@ -24,6 +24,13 @@ export interface ProjectSummary {
   size_bytes?: number
   /** Present for git checkouts; `branch` is null on a detached or non-git root. */
   git?: { branch?: string | null }
+  /**
+   * Filled in by the extension, not the CLI: mtime of the per-project store
+   * file, which is the only record of when the index was last built.
+   */
+  indexed_at_ms?: number
+  /** Files changed since the index was built, from `detect_changes`. */
+  changed_count?: number
 }
 
 export interface IndexStatus {

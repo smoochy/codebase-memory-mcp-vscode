@@ -3,7 +3,7 @@ import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
-import { engineLogDirectory, gitBashCandidates } from './binary/shells'
+import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binary/shells'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
@@ -243,7 +243,21 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     if (state.activePath !== null) {
       const client = new CliClient(state.activePath, runProcess)
       const result = await client.listProjects()
-      projects = result.ok ? result.value : []
+      // The CLI reports no timestamp, so when the index was last built comes
+      // from the store file it writes per project. statSync per project is a
+      // cheap enough price on a timer; asking the CLI would mean one process
+      // launch each.
+      projects = (result.ok ? result.value : []).map((project) => {
+        try {
+          const at = statSync(projectStorePath(homedir(), project.name)).mtimeMs
+          return { ...project, indexed_at_ms: at }
+        } catch {
+          return project
+        }
+      })
+      if (!result.ok) {
+        warn(`listing projects failed: ${result.error}`)
+      }
 
       const installed = await client.version()
       version = installed.ok ? installed.value : null
@@ -482,7 +496,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // Drop the ownership record with the file, so a binary that later
         // reappears at this path is not mistaken for ours.
         await context.globalState.update(OWNED_INSTALL_KEY, undefined)
-        log(`removed ${managed}`)
+        log(`User: removed the managed binary at ${managed}`)
       } catch (cause) {
         fail('Removing the managed binary', cause)
         return
@@ -527,13 +541,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       // The key must be one the CLI itself reported. A webview message is not
       // a trustworthy source for something that becomes a CLI argument.
-      if (!cliSettings.some((setting) => setting.key === key)) {
-        log(`ignored unknown CLI setting: ${key}`)
+      const known = cliSettings.find((entry) => entry.key === key)
+      if (known === undefined) {
+        warn(`ignored unknown CLI setting: ${key}`)
         return
       }
+      if (known.value === value) {
+        debug(`CLI setting ${key} already ${value}; nothing written`)
+        return
+      }
+      // Who, what, and from what to what. "panel: setCliSetting (auto_index)"
+      // recorded that something happened to a key and nothing about the change
+      // itself, which is the only part worth reading later.
+      log(`User: CLI setting ${key} "${known.value}" -> "${value}"`)
       const result = await new CliClient(state.activePath, runProcess).setConfig(key, value)
       if (!result.ok) {
+        warn(`CLI setting ${key} failed to change: ${result.error}`)
         fail(`Setting ${key}`, new Error(result.error))
+      } else {
+        log(`CLI setting ${key} is now "${value}"`)
       }
       await refreshCliSettings()
     },
@@ -584,7 +610,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.addProject': async () => {
-      log('add repositories: opening the folder picker')
+      log('User: add repositories (opening the folder picker)')
       const picked = await vscode.window.showOpenDialog({
         canSelectFolders: true,
         canSelectFiles: false,
@@ -605,12 +631,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             progress.report({
               message: `${folder.fsPath} (${String(done + 1)}/${String(picked.length)})`,
             })
+            log(`indexing ${folder.fsPath}`)
             const result = await client.addProject(folder.fsPath)
-            if (!result.ok) {
+            if (result.ok) {
+              log(`indexed ${folder.fsPath}`)
+            } else {
               // Silence here was the whole problem: indexing could fail on
               // every folder and the panel just stayed empty.
               failures.push(`${folder.fsPath}: ${result.error}`)
-              log(`addProject failed for ${folder.fsPath}: ${result.error}`)
+              warn(`indexing ${folder.fsPath} failed: ${result.error}`)
             }
           }
         },
@@ -677,7 +706,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return
       }
       logFile.clear()
-      log('log cleared')
+      log('User: cleared the extension log')
       void vscode.window.showInformationMessage('Extension log cleared.')
     },
     'betterCmm.showEngineLogs': async () => {
@@ -692,14 +721,21 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           .map((name) => {
             const full = join(directory, name)
             const stats = statSync(full)
+            const worker = name.startsWith('.worker-')
             return {
               label: name,
               description: `${formatBytes(stats.size)}, ${stats.mtime.toLocaleString()}`,
               path: full,
               at: stats.mtimeMs,
+              size: stats.size,
+              // Client sessions first: a worker file only exists to capture a
+              // crash, and is empty when there was none.
+              group: worker ? 'Indexing workers' : 'Client sessions',
             }
           })
-          .sort((a, b) => b.at - a.at)
+          // Empty files are noise: they are workers that exited cleanly.
+          .filter((entry) => entry.size > 0)
+          .sort((a, b) => (a.group === b.group ? b.at - a.at : a.group < b.group ? 1 : -1))
       } catch (cause) {
         debug(`engine log directory unreadable: ${cause instanceof Error ? cause.message : ''}`)
       }
@@ -733,8 +769,41 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       debug('opening the VS Code settings UI')
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
     },
+    'betterCmm.reindexProject': async (name) => {
+      const state = resolveState(storageDir, ownedInstallPath())
+      if (name === undefined || state.activePath === null) {
+        return
+      }
+      // Resolve the name against the list the extension fetched itself, the
+      // same rule removeProject uses: a webview message is not a trustworthy
+      // source for something that becomes a CLI argument.
+      const project = projects.find((entry) => entry.name === name)
+      if (project === undefined) {
+        warn(`ignored reindexProject for unknown project: ${name}`)
+        return
+      }
+      log(`User: reindex "${project.name}" (${project.root_path})`)
+      const client = new CliClient(state.activePath, runProcess, 300_000)
+      const result = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Reindexing ${project.name}` },
+        async () => client.addProject(project.root_path),
+      )
+      if (result.ok) {
+        log(`reindex of "${project.name}" finished`)
+      } else {
+        warn(`reindex of "${project.name}" failed: ${result.error}`)
+        void vscode.window
+          .showErrorMessage(`Could not reindex ${project.name}.`, 'View extension log')
+          .then((choice) => {
+            if (choice === 'View extension log') {
+              void vscode.commands.executeCommand('betterCmm.showLogs')
+            }
+          })
+      }
+      await refresh()
+    },
     'betterCmm.reindex': async () => {
-      log('reindex requested')
+      log('User: reindex all projects')
       const state = resolveState(storageDir, ownedInstallPath())
       if (state.activePath === null || projects.length === 0) {
         return

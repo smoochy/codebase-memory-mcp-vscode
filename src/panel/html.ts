@@ -262,8 +262,15 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
         `<div class="card-path" title="${escapeHtml(project.root_path)}">` +
         `${escapeHtml(parentPath(project.root_path))}</div>` +
         '</div>' +
+        '<span class="card-tools">' +
+        // Re-running the index for one project, without touching the others.
+        `<button class="remove" title="Reindex this repository now. Rescans its files and ` +
+        `rebuilds its part of the graph; nothing else is touched." ` +
+        `aria-label="Reindex ${name}" ` +
+        `data-command="betterCmm.reindexProject" data-project="${name}">${icon('reindex')}</button>` +
         `<button class="remove" title="Remove from index" aria-label="Remove ${name} from the index" ` +
         `data-command="betterCmm.removeProject" data-project="${name}">${icon('trash')}</button>` +
+        '</span>' +
         '</div>' +
         '<div class="card-stats">' +
         `<span>${escapeHtml(formatCount(project.nodes))} <em>nodes</em></span>` +
@@ -280,6 +287,7 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
           ? '<span class="sep">·</span>' + branchTag(project.git.branch)
           : '') +
         '</div>' +
+        freshness(project) +
         '</div>'
       )
     })
@@ -294,6 +302,52 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
  */
 function trimmedPath(rootPath: string): string {
   return typeof rootPath === 'string' ? rootPath.replace(/[\\/]+$/, '') : ''
+}
+
+/** Relative age, because "3 hours ago" answers the question a date makes you do arithmetic for. */
+export function relativeTime(thenMs: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.round((nowMs - thenMs) / 1000))
+  if (seconds < 90) {
+    return 'just now'
+  }
+  const steps: [number, string][] = [
+    [60, 'minute'],
+    [3600, 'hour'],
+    [86400, 'day'],
+  ]
+  let unit = 'minute'
+  let size = 60
+  for (const [step, label] of steps) {
+    if (seconds >= step) {
+      unit = label
+      size = step
+    }
+  }
+  const count = Math.round(seconds / size)
+  return `${String(count)} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+/**
+ * When the index was last built, and whether it still matches the working tree.
+ *
+ * The CLI reports no timestamp, so the age comes from the store file it writes
+ * per project. Staleness is the more useful half: `detect_changes` counts the
+ * files that moved since, which answers "is this current" without the user
+ * having to reason about a date.
+ */
+function freshness(project: ProjectSummary): string {
+  const parts: string[] = []
+  if (typeof project.indexed_at_ms === 'number' && Number.isFinite(project.indexed_at_ms)) {
+    parts.push(`indexed ${escapeHtml(relativeTime(project.indexed_at_ms, Date.now()))}`)
+  }
+  if (typeof project.changed_count === 'number' && project.changed_count > 0) {
+    const files = project.changed_count === 1 ? 'file' : 'files'
+    parts.push(
+      `<span class="stale" title="Reindex to pick these up">` +
+        `${escapeHtml(String(project.changed_count))} ${files} changed since</span>`,
+    )
+  }
+  return parts.length === 0 ? '' : `<div class="card-age">${parts.join(' · ')}</div>`
 }
 
 /** The last path segment - what the user actually calls the repository. */
@@ -587,19 +641,31 @@ export function renderBody(model: PanelModel, nonce: string): string {
       button('betterCmm.updateBinary', `Update to ${model.updateAvailable}`, 'arrowUp', 'primary'),
     )
   }
-  buttons.push(button('betterCmm.addProject', 'Add repositories', 'plus'))
-  // Reindex only makes sense once something is indexed; offering it against an
-  // empty list would be a button that provably does nothing.
+  // Anything above this point is a one-off call to action - registering,
+  // updating - and keeps a full-width row of its own. Below it the actions are
+  // grouped by what they act on, two to a row.
+  const projectActions = [button('betterCmm.addProject', 'Add repositories', 'plus')]
+  // Reindexing only makes sense once something is indexed; offering it against
+  // an empty list would be a button that provably does nothing.
   if (model.projects.length > 0) {
-    buttons.push(button('betterCmm.reindex', 'Reindex', 'reindex'))
+    projectActions.push(button('betterCmm.reindex', 'Reindex all projects', 'reindex'))
   }
   // No Refresh button here: the title bar already has one, running the same
   // command, and two identical controls in one view only raise the question of
   // how they differ.
-  buttons.push(button('betterCmm.showLogs', 'View extension log', 'logs'))
-  buttons.push(button('betterCmm.showEngineLogs', 'View engine logs', 'logs'))
+  const logActions = [
+    button('betterCmm.showLogs', 'View extension log', 'logs'),
+    button('betterCmm.showEngineLogs', 'View engine logs', 'logs'),
+  ]
 
-  parts.push(section('Actions', `<div class="actions">${buttons.join('')}</div>`))
+  parts.push(
+    section(
+      'Actions',
+      (buttons.length === 0 ? '' : `<div class="actions">${buttons.join('')}</div>`) +
+        `<div class="actions grid">${projectActions.join('')}</div>` +
+        `<div class="actions grid">${logActions.join('')}</div>`,
+    ),
+  )
   parts.push(section('Projects', projectCards(model.projects, loading)))
 
   return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -700,6 +766,12 @@ header {
   text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
 }
 .cmd-row .cmd { margin-bottom: 5px; }
+/* Two to a row, thematically grouped. auto-fit keeps a single action full
+   width rather than leaving half the row empty. */
+.actions.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px;
+}
+.actions.grid .action { margin: 0; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;
@@ -805,6 +877,10 @@ section h2 {
 }
 .card-stats em { font-style: normal; opacity: .7; }
 .card-stats .sep { opacity: .35; }
+.card-age { margin-top: 4px; font-size: 10px; color: var(--muted); }
+/* An index behind its working tree is worth noticing, not alarming. */
+.card-age .stale { color: var(--warn); cursor: help; }
+.card-tools { display: flex; gap: 2px; flex-shrink: 0; }
 /* The branch reads as a label rather than another number. */
 .card-stats .branch {
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

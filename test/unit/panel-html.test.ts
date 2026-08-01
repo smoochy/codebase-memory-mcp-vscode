@@ -319,6 +319,51 @@ describe('renderBody', () => {
     })
   })
 
+  describe('actions layout', () => {
+    it('groups the actions into rows rather than one column', () => {
+      const html = renderBody(model({ projects: [{ name: 'a', root_path: '/a' }] }), 'n1')
+      const rows = html.match(/class="actions grid"/g) ?? []
+      assert.equal(rows.length, 2, 'expected a project row and a log row')
+      assert.match(html, /Reindex all projects/)
+    })
+
+    it('omits the reindex-all action when nothing is indexed', () => {
+      const html = renderBody(model({ projects: [] }), 'n1')
+      assert.doesNotMatch(html, /Reindex all projects/)
+    })
+  })
+
+  describe('project freshness', () => {
+    it('offers a per-project reindex beside the remove button', () => {
+      const html = renderBody(model({ projects: [{ name: 'a', root_path: '/a' }] }), 'n1')
+      assert.match(html, /data-command="betterCmm.reindexProject" data-project="a"/)
+      assert.match(html, /Rescans its files/)
+    })
+
+    it('says when the index was last built', () => {
+      const html = renderBody(
+        model({
+          projects: [{ name: 'a', root_path: '/a', indexed_at_ms: Date.now() - 7200000 }],
+        }),
+        'n1',
+      )
+      assert.match(html, /indexed 2 hours ago/)
+    })
+
+    it('flags an index that is behind its working tree', () => {
+      const html = renderBody(
+        model({ projects: [{ name: 'a', root_path: '/a', changed_count: 3 }] }),
+        'n1',
+      )
+      assert.match(html, /3 files changed since/)
+    })
+
+    it('says nothing about freshness when the CLI reported nothing', () => {
+      const html = renderBody(model({ projects: [{ name: 'a', root_path: '/a' }] }), 'n1')
+      assert.doesNotMatch(html, /card-age/)
+    })
+  })
+
   describe('settings screen', () => {
     const settingsModel = (cliSettings: PanelModel['cliSettings']): PanelModel => ({
       state: {

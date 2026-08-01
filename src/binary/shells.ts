@@ -1,3 +1,19 @@
+/** Where the CLI keeps one store file per indexed project. */
+export function engineStoreDirectory(home: string): string {
+  return `${home.replace(/\\/g, '/')}/.cache/codebase-memory-mcp`
+}
+
+/**
+ * The store file backing one project.
+ *
+ * Its modification time is the only record of when the index was last built -
+ * the CLI reports counts and git revisions but no timestamp. The `-wal` and
+ * `-shm` siblings move on every read, so only the `.db` itself is meaningful.
+ */
+export function projectStorePath(home: string, projectName: string): string {
+  return `${engineStoreDirectory(home)}/${projectName}.db`
+}
+
 /**
  * Where the CLI keeps its own logs.
  *

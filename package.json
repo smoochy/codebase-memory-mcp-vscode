@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -25,7 +25,8 @@
     "test:package": "npm run build && npm run compile:test && mocha --no-config --spec out/test/package/**/*.test.js",
     "test": "npm run test:unit && npm run test:integration",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "install:local": "node scripts/install-local.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
@@ -136,6 +137,11 @@
         "command": "betterCmm.clearLog",
         "title": "Clear Extension Log",
         "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.reindexProject",
+        "title": "Reindex Project",
+        "category": "Codebase Memory"
       }
     ],
     "menus": {
@@ -205,7 +211,8 @@
           "type": "number",
           "default": 30,
           "minimum": 5,
-          "description": "Seconds between statistics refreshes."
+          "description": "Seconds between statistics refreshes.",
+          "markdownDescription": "Seconds between statistics refreshes. Only applies while `#betterCmm.autoRefresh#` is on."
         },
         "betterCmm.checkForUpdates": {
           "type": "boolean",

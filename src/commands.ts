@@ -13,6 +13,7 @@ export const COMMAND_IDS = [
   'betterCmm.clearLog',
   'betterCmm.openSettings',
   'betterCmm.reindex',
+  'betterCmm.reindexProject',
   'betterCmm.showSettings',
   'betterCmm.closeScreen',
   'betterCmm.copyBinaryDir',
