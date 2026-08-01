@@ -355,6 +355,7 @@ export function absoluteTimeLabel(atMs: number, locale?: string): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   }
   const wanted = locale === undefined || locale.trim() === '' ? undefined : locale.trim()
   try {
@@ -371,16 +372,14 @@ export function absoluteTimeLabel(atMs: number, locale?: string): string {
 /**
  * Whether the index is behind the checkout.
  *
- * `base_sha` is the commit the index was built from and `head_sha` the one the
- * working tree is on, so a difference is the exact statement "this index does
- * not describe what is on disk". Both already arrive with the project list, so
- * this costs nothing - unlike `detect_changes`, which is a process launch each
- * and measures the working tree against HEAD rather than against the index.
+ * The flag is decided in the extension, which remembers the commit each index
+ * was actually built from. `git.base_sha` looked like that value and is not:
+ * measured against the real CLI, it is written once when a project is first
+ * added and never advances, so a project that fell behind stayed marked
+ * outdated forever - including immediately after a successful reindex.
  */
 function staleCommit(project: ProjectSummary): boolean {
-  const base = project.git?.base_sha
-  const head = project.git?.head_sha
-  return typeof head === 'string' && head.length > 0 && base !== head
+  return project.stale === true
 }
 
 /**

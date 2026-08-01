@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.0]
+
+The "outdated" marker introduced in 0.8.0 was wrong. It compared the CLI's
+`git.base_sha` against `git.head_sha`, on the assumption that `base_sha` names
+the commit the index was built from. Measured against the real binary, that
+value is written when a project is first added and a reindex never advances it,
+so a project that fell behind stayed marked outdated permanently - including
+immediately after a reindex reported success. The extension now records the
+head commit of every index it builds itself and compares against that. A
+project it has never indexed makes no claim in either direction.
+
+- New `betterCmm.autoReindex` (off by default) reindexes a repository once the
+  checkout has moved to another commit, with `betterCmm.autoReindexIntervalSeconds`
+  setting how often that is checked. This watches commits, not files: a `**/*`
+  watcher per repository is what made the original extension reindex constantly.
+  Uncommitted edits are therefore not covered.
+- Concurrent indexing of one project is now refused rather than run twice.
+- Absolute index times carry seconds, so two reindexes moments apart are
+  distinguishable.
+- A manual reindex writes one log line naming who asked, the repository, and the
+  result, instead of two.
+
 ## [0.1.0]
 
 Independent rewrite of the `tunakite03.codebase-memory-mcp` extension, fixing seven

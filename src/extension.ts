@@ -95,6 +95,14 @@ function indexReport(payload: unknown, before?: { nodes?: number; edges?: number
  * never modifies an installation it does not own.
  */
 const OWNED_INSTALL_KEY = 'betterCmm.managedInstallPath'
+const INDEX_RECORDS_KEY = 'betterCmm.indexRecords'
+
+/** When the extension last indexed a project, and from which commit. */
+interface IndexRecord {
+  /** Head commit at the time, or null when the repository reported none. */
+  sha: string | null
+  at: number
+}
 
 function resolveState(storageDir: string, ownedInstallPath: string | null): ExtensionState {
   const source = setting<BinarySource>('binarySource', 'auto')
@@ -176,6 +184,48 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const ownedInstallPath = (): string | null =>
     context.globalState.get<string>(OWNED_INSTALL_KEY) ?? null
 
+  /**
+   * What the extension remembers about each index it built.
+   *
+   * The CLI reports `git.base_sha`, which reads like the commit the index was
+   * built from and is not: it is written when a project is first added and a
+   * later reindex leaves it untouched, so comparing it against `head_sha`
+   * marked a project outdated permanently - measured directly against the real
+   * binary, including immediately after a reindex reported success. So the
+   * extension keeps its own note instead, and a project it has never indexed
+   * gets no note and therefore no claim either way.
+   */
+  const indexRecords = (): Record<string, IndexRecord> =>
+    context.globalState.get<Record<string, IndexRecord>>(INDEX_RECORDS_KEY) ?? {}
+
+  const rememberIndexed = async (name: string, head: unknown): Promise<void> => {
+    const records: Record<string, IndexRecord> = Object.assign(
+      Object.create(null) as Record<string, IndexRecord>,
+      indexRecords(),
+    )
+    records[name] = {
+      sha: typeof head === 'string' && head.length > 0 ? head : null,
+      at: Date.now(),
+    }
+    await context.globalState.update(INDEX_RECORDS_KEY, records)
+  }
+
+  /** Reindexes already running, so two of them never touch one store at once. */
+  const inFlight = new Set<string>()
+
+  /** Fallback timestamp: the mtime of the store file the CLI writes per project. */
+  const storeMtime = (name: string): number | undefined => {
+    const store = projectStorePath(homedir(), name)
+    if (store === null) {
+      return undefined
+    }
+    try {
+      return statSync(store).mtimeMs
+    } catch {
+      return undefined
+    }
+  }
+
   const panel = new PanelProvider(context.extensionUri, (command, project, value) => {
     // The webview is attacker-influenced content (project names come out of
     // the wrapped CLI's JSON), so its command string must be checked against
@@ -242,6 +292,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'externalBinaryPath',
     'autoRefresh',
     'refreshIntervalSeconds',
+    'autoReindex',
+    'autoReindexIntervalSeconds',
     'absoluteTimestamps',
     'dateLocale',
     'checkForUpdates',
@@ -343,23 +395,54 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     if (state.activePath !== null) {
       const client = new CliClient(state.activePath, runProcess)
       const result = await client.listProjects()
-      // The CLI reports no timestamp, so when the index was last built comes
-      // from the store file it writes per project. statSync per project is a
-      // cheap enough price on a timer; asking the CLI would mean one process
-      // launch each.
+      // Null prototype: the keys are project names the CLI chose, and on a
+      // plain object `__proto__` is an assignment to the prototype rather than
+      // an entry.
+      const records: Record<string, IndexRecord> = Object.assign(
+        Object.create(null) as Record<string, IndexRecord>,
+        indexRecords(),
+      )
+      let recordsChanged = false
+
       projects = (result.ok ? result.value : []).map((project) => {
-        const store = projectStorePath(homedir(), project.name)
-        if (store === null) {
-          return project
+        const head =
+          typeof project.git?.head_sha === 'string' && project.git.head_sha.length > 0
+            ? project.git.head_sha
+            : null
+        // A project added through the picker gets its note before its name is
+        // known, so the commit is filled in on the first refresh that sees it.
+        const existing = records[project.name]
+        if (existing !== undefined && existing.sha === null && head !== null) {
+          records[project.name] = { sha: head, at: existing.at }
+          recordsChanged = true
         }
-        try {
-          return { ...project, indexed_at_ms: statSync(store).mtimeMs }
-        } catch {
-          return project
+        const record = records[project.name]
+        return {
+          ...project,
+          // Our own note first. The store file's mtime is the fallback for a
+          // project this extension has never indexed itself - it is the only
+          // other trace of when the index was built, but an unchanged reindex
+          // does not touch the file, so it cannot stand on its own.
+          indexed_at_ms: record?.at ?? storeMtime(project.name),
+          stale:
+            record?.sha != null && head !== null ? record.sha !== head : undefined,
         }
       })
-      if (!result.ok) {
+
+      if (result.ok) {
+        // Only prune against a list that actually arrived; a failed call would
+        // otherwise throw away every note the extension has.
+        for (const name of Object.keys(records)) {
+          if (!projects.some((project) => project.name === name)) {
+            delete records[name]
+            recordsChanged = true
+          }
+        }
+      } else {
         warn(`listing projects failed: ${result.error}`)
+      }
+      if (recordsChanged) {
+        await context.globalState.update(INDEX_RECORDS_KEY, records)
       }
 
       const installed = await client.version()
@@ -760,6 +843,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         })
       }
       await refresh()
+      // The names the CLI derives are not known until the list comes back, so
+      // the notes are written afterwards, matched by the root that was picked.
+      for (const folder of picked) {
+        const added = projects.find((project) => samePath(project.root_path, folder.fsPath))
+        if (added !== undefined && indexRecords()[added.name] === undefined) {
+          await rememberIndexed(added.name, added.git?.head_sha)
+        }
+      }
     },
     'betterCmm.removeProject': async (name) => {
       const state = resolveState(storageDir, ownedInstallPath())
@@ -893,22 +984,32 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         warn(`ignored reindexProject for unknown project: ${name}`)
         return
       }
-      log(`User: reindex "${project.name}" (${project.root_path})`)
+      if (inFlight.has(project.name)) {
+        log(`User: reindex "${project.name}" skipped, one is already running`)
+        return
+      }
       const client = new CliClient(state.activePath, runProcess, 300_000)
-      const result = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Reindexing ${project.name}` },
-        async () => client.addProject(project.root_path),
-      )
+      inFlight.add(project.name)
+      let result
+      try {
+        result = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Reindexing ${project.name}` },
+          async () => client.addProject(project.root_path),
+        )
+      } finally {
+        inFlight.delete(project.name)
+      }
       if (result.ok) {
         // Indexing is incremental: an unchanged repository comes back in under
         // a second and the store file is not touched, so "finished" on its own
         // was indistinguishable from nothing having happened. Report what the
-        // CLI actually said.
+        // CLI actually said, on the one line that also names who asked.
         const report = indexReport(result.value, { nodes: project.nodes, edges: project.edges })
-        log(`reindex of "${project.name}" finished: ${report}`)
+        log(`User: reindex "${project.name}" (${project.root_path}): ${report}`)
+        await rememberIndexed(project.name, project.git?.head_sha)
         void vscode.window.showInformationMessage(`${project.name}: ${report}`)
       } else {
-        warn(`reindex of "${project.name}" failed: ${result.error}`)
+        warn(`User: reindex "${project.name}" (${project.root_path}) failed: ${result.error}`)
         void vscode.window
           .showErrorMessage(`Could not reindex ${project.name}.`, 'View extension log')
           .then((choice) => {
@@ -927,18 +1028,37 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       // Re-running index_repository against a known root is what refreshes an
       // existing project; there is no separate reindex tool.
-      const roots = projects.map((project) => project.root_path)
+      const targets = projects.filter((project) => !inFlight.has(project.name))
       const client = new CliClient(state.activePath, runProcess, 300_000)
       const failures: string[] = []
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Reindexing projects' },
         async (progress) => {
-          for (const [done, root] of roots.entries()) {
-            progress.report({ message: `${root} (${String(done + 1)}/${String(roots.length)})` })
-            const result = await client.addProject(root)
-            if (!result.ok) {
-              failures.push(root)
-              log(`reindex failed for ${root}: ${result.error}`)
+          for (const [done, project] of targets.entries()) {
+            progress.report({
+              message: `${project.root_path} (${String(done + 1)}/${String(targets.length)})`,
+            })
+            // Re-checked per iteration: the filter above ran before any await,
+            // so the auto-reindex timer can have claimed a project since.
+            if (inFlight.has(project.name)) {
+              continue
+            }
+            inFlight.add(project.name)
+            let result
+            try {
+              result = await client.addProject(project.root_path)
+            } finally {
+              inFlight.delete(project.name)
+            }
+            if (result.ok) {
+              log(
+                `reindex "${project.name}": ` +
+                  indexReport(result.value, { nodes: project.nodes, edges: project.edges }),
+              )
+              await rememberIndexed(project.name, project.git?.head_sha)
+            } else {
+              failures.push(project.root_path)
+              log(`reindex failed for ${project.root_path}: ${result.error}`)
             }
           }
         },
@@ -946,7 +1066,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (failures.length > 0) {
         void vscode.window
           .showErrorMessage(
-            `Could not reindex ${String(failures.length)} of ${String(roots.length)} projects.`,
+            `Could not reindex ${String(failures.length)} of ${String(targets.length)} projects.`,
             'View extension log',
           )
           .then((choice) => {
@@ -970,6 +1090,89 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(PanelProvider.viewType, panel),
   )
+
+  /**
+   * Reindex what the checkout has moved past, if the user asked for it.
+   *
+   * This watches commits, not files. A `**\/*` FileSystemWatcher over every
+   * indexed root - what the predecessor extension did - is what produced the
+   * constant re-indexing this project set out to stop, and it costs a native
+   * watcher per repository including their `node_modules`. Comparing the head
+   * commit against the one each index was built from costs nothing beyond the
+   * project list already being fetched, and it is exactly the case that goes
+   * unnoticed today: a pull that moves the checkout out from under the index.
+   * Edits that are not yet committed are not covered.
+   */
+  const autoReindexTick = async (): Promise<void> => {
+    if (!setting('autoReindex', false)) {
+      return
+    }
+    const state = resolveState(storageDir, ownedInstallPath())
+    if (state.activePath === null) {
+      return
+    }
+    // The panel may be hidden, and then nothing else has refreshed the list.
+    await refresh()
+    const due = projects.filter(
+      (project) => project.stale === true && !inFlight.has(project.name),
+    )
+    if (due.length === 0) {
+      return
+    }
+    const client = new CliClient(state.activePath, runProcess, 300_000)
+    for (const project of due) {
+      // Re-checked here, not only when `due` was built: every iteration awaits,
+      // and a manual reindex or the next tick can claim a project in between.
+      // A single index may run for minutes while the interval floor is 30s.
+      if (inFlight.has(project.name)) {
+        continue
+      }
+      inFlight.add(project.name)
+      try {
+        const result = await client.addProject(project.root_path)
+        if (result.ok) {
+          log(
+            `Auto: reindex "${project.name}" (${project.root_path}): ` +
+              indexReport(result.value, { nodes: project.nodes, edges: project.edges }),
+          )
+          await rememberIndexed(project.name, project.git?.head_sha)
+        } else {
+          // A root that was deleted or unmounted fails here every tick. It is
+          // logged and skipped; one broken repository must not stop the rest.
+          warn(`Auto: reindex "${project.name}" failed: ${result.error}`)
+        }
+      } catch (cause) {
+        warn(`Auto: reindex "${project.name}" threw: ${cause instanceof Error ? cause.message : String(cause)}`)
+      } finally {
+        inFlight.delete(project.name)
+      }
+    }
+    await refresh()
+  }
+
+  if (setting('autoReindex', false)) {
+    const seconds = numberSetting('autoReindexIntervalSeconds', 300, 30, 3600)
+    log(`auto reindex on, checking every ${String(seconds)}s`)
+    // One tick at a time: a single index may take minutes, far longer than the
+    // interval floor, and a second tick would start on the same repositories.
+    let ticking = false
+    const timer = setInterval(() => {
+      if (ticking) {
+        return
+      }
+      ticking = true
+      // Nothing here may throw out of the callback: an unhandled rejection in a
+      // timer takes the whole loop down and auto reindex silently stops.
+      void autoReindexTick()
+        .catch((cause: unknown) => {
+          warn(`auto reindex tick failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+        })
+        .finally(() => {
+          ticking = false
+        })
+    }, seconds * 1000)
+    context.subscriptions.push({ dispose: () => { clearInterval(timer) } })
+  }
 
   // Polling only, no FileSystemWatcher: the CLI watches files itself.
   if (setting('autoRefresh', true)) {

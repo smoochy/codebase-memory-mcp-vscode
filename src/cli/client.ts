@@ -25,16 +25,28 @@ export interface ProjectSummary {
   /** Present for git checkouts; `branch` is null on a detached or non-git root. */
   git?: {
     branch?: string | null
-    /** Commit the index was built from. */
+    /**
+     * Written when the project is first added and never advanced afterwards -
+     * measured against the real CLI, a reindex leaves it untouched. It is
+     * therefore NOT the commit the current index was built from; the extension
+     * records that itself. Kept only because the CLI reports it.
+     */
     base_sha?: string | null
-    /** Commit the working tree is on now. Differs from base_sha when stale. */
+    /** Commit the working tree is on now. */
     head_sha?: string | null
   }
   /**
-   * Filled in by the extension, not the CLI: mtime of the per-project store
-   * file, which is the only record of when the index was last built.
+   * Filled in by the extension, not the CLI: when this extension last indexed
+   * the project, falling back to the mtime of the per-project store file for
+   * projects it has not indexed itself yet.
    */
   indexed_at_ms?: number
+  /**
+   * Filled in by the extension: the checkout has moved to another commit since
+   * the index was built. Absent when the extension has never indexed this
+   * project and so has nothing to compare against.
+   */
+  stale?: boolean
   /** Files changed since the index was built, from `detect_changes`. */
   changed_count?: number
 }

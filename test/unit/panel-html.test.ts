@@ -138,6 +138,12 @@ describe('absoluteTimeLabel', () => {
     assert.match(absoluteTimeLabel(at, 'en-US'), /08\/01\/2026/)
   })
 
+  // Two reindexes minutes apart are told apart by the minute; two a few
+  // seconds apart are not, and those are exactly the ones under suspicion.
+  it('carries seconds', () => {
+    assert.match(absoluteTimeLabel(Date.UTC(2026, 7, 1, 12, 31, 47), 'de-DE'), /:31:47/)
+  })
+
   // The setting is free text, and toLocaleString throws RangeError on a
   // malformed tag - "de_DE" with an underscore is the obvious typo. A throw
   // here would land in the refresh timer, which has no handler.
@@ -428,16 +434,12 @@ describe('renderBody', () => {
       assert.match(absolute, /title="Index last updated: [0-9]+h( [0-9]+m)? ago"/)
     })
 
-    // base_sha is the commit the index was built from, head_sha the one the
-    // checkout is on. A difference is the exact statement "this index does not
-    // describe what is on disk", and both already arrive with the project list.
-    it('marks an index built from an earlier commit as outdated', () => {
+    // The extension decides staleness and passes the answer in. It cannot be
+    // read off `git.base_sha`: that value never advances, so a reindex left
+    // the project marked outdated for good.
+    it('marks an index the extension reported as behind the checkout', () => {
       const html = renderBody(
-        model({
-          projects: [
-            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'bbbb2222' } },
-          ],
-        }),
+        model({ projects: [{ name: 'a', root_path: '/a', stale: true }] }),
         'n1',
       )
       assert.match(html, /outdated/)
@@ -446,9 +448,18 @@ describe('renderBody', () => {
 
     it('says nothing when the index matches the checkout', () => {
       const html = renderBody(
+        model({ projects: [{ name: 'a', root_path: '/a', stale: false }] }),
+        'n1',
+      )
+      assert.doesNotMatch(html, /outdated/)
+    })
+
+    // A differing base_sha must not resurrect the old, permanently-true claim.
+    it('ignores base_sha, which the CLI never advances', () => {
+      const html = renderBody(
         model({
           projects: [
-            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'aaaa1111' } },
+            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'bbbb2222' } },
           ],
         }),
         'n1',
@@ -456,7 +467,7 @@ describe('renderBody', () => {
       assert.doesNotMatch(html, /outdated/)
     })
 
-    it('says nothing for a checkout that is not a git repository', () => {
+    it('says nothing when the extension has no record to compare against', () => {
       const html = renderBody(model({ projects: [{ name: 'a', root_path: '/a' }] }), 'n1')
       assert.doesNotMatch(html, /outdated/)
     })
