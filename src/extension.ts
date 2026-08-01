@@ -14,7 +14,7 @@ import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
@@ -262,10 +262,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * expects to find on their PATH. The managed install stays the only real
    * copy; PATH gets a launcher pointing at it.
    */
-  const installShim = (managedPath: string): void => {
+  const installShim = (managedPath: string, replaceExistingCopy: boolean): void => {
     const home = homedir()
     const shim = shimPath(home, process.platform)
     const copy = installedCopyPath(home, process.platform)
+    if (!replaceExistingCopy) {
+      // The binary on PATH was already there before this run, so it is the
+      // user's, not ours. The extension does not modify an installation it
+      // does not own, and that has to hold here too.
+      log('left the existing binary on PATH alone; no launcher written')
+      return
+    }
     try {
       mkdirSync(shimDirectory(home), { recursive: true })
       // Only ever the two names in that one directory, never anything else.
@@ -273,9 +280,22 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         rmSync(copy, { force: true })
         log(`replaced the installed copy at ${copy} with a launcher`)
       }
-      writeFileSync(shim, shimContents(managedPath, process.platform), 'utf8')
-      if (process.platform !== 'win32') {
-        chmodSync(shim, 0o755)
+      // Unlink first, then create exclusively. writeFileSync and chmodSync both
+      // follow symlinks, so a link planted at this name - even a dangling one,
+      // which existsSync reports as absent - would have this write create the
+      // attacker's target and mark it executable. rmSync removes the link
+      // itself, and 'wx' refuses any name that reappears in between.
+      rmSync(shim, { force: true })
+      const handle = openSync(shim, 'wx', 0o755)
+      try {
+        writeFileSync(handle, shimContents(managedPath, process.platform), 'utf8')
+        if (process.platform !== 'win32') {
+          // On the descriptor, so it cannot be redirected, and so a restrictive
+          // umask does not leave the launcher unexecutable.
+          fchmodSync(handle, 0o755)
+        }
+      } finally {
+        closeSync(handle)
       }
     } catch (cause) {
       // A missing launcher costs a PATH entry, not the installation.
@@ -345,7 +365,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const title = firstStep === undefined ? 'Better Codebase Memory MCP' : firstStep.title
 
       try {
-        const { tag } = await vscode.window.withProgress(
+        const copyWasThere = existsSync(installedCopyPath(homedir(), process.platform))
+      const { tag } = await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title },
           async (progress) =>
             installLatest(
@@ -361,7 +382,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const registered = await registerMcp()
         if (registered.ok) {
           restartRequired = true
-          installShim(managedBinaryPath(storageDir, process.platform))
+          installShim(managedBinaryPath(storageDir, process.platform), !copyWasThere)
         }
         await refresh()
 

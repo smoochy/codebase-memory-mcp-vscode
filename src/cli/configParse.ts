@@ -18,6 +18,13 @@ const KEY_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
  * here, which would go stale the moment upstream adds one.
  */
 export function optionsFromDescription(description: string): string[] {
+  // A description is a whole line of CLI output, bounded only by the 8 MB
+  // stdout cap, and the pattern backtracks over long whitespace runs. Measured
+  // at 62 ms for 480 KB, so this is a slow render rather than a hang - but an
+  // option list longer than this is not a picker either way.
+  if (description.length > 300) {
+    return []
+  }
   const match = /:\s*([a-z0-9_-]+(?:\s*,\s*[a-z0-9_-]+)*\s*,?\s*or\s+[a-z0-9_-]+)\s*$/i.exec(
     description.trim(),
   )

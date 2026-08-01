@@ -60,9 +60,17 @@ export function shimContents(targetPath: string, platform: NodeJS.Platform): str
   if (platform === 'win32') {
     // @echo off so the shim itself never appears in output the CLI's callers
     // parse, and a plain call so the exit code passes straight through.
-    return `@echo off\r\n"${targetPath.replace(/\//g, '\\')}" %*\r\n`
+    //
+    // `%%` is the literal percent in a batch file: cmd.exe expands `%VAR%`
+    // even inside double quotes, and a percent is legal in a Windows account
+    // name, so an unescaped one silently rewrites the path.
+    const windowsPath = targetPath.replace(/\//g, '\\').replace(/%/g, '%%')
+    return `@echo off\r\n"${windowsPath}" %*\r\n`
   }
-  return `#!/bin/sh\nexec "${targetPath}" "$@"\n`
+  // Single quotes, not double: inside double quotes a shell still acts on `$`,
+  // a backtick and a backslash, and all three are legal in a POSIX path. The
+  // replacement is the standard way to carry a single quote through them.
+  return `#!/bin/sh\nexec '${targetPath.replace(/'/g, "'\\''")}' "$@"\n`
 }
 
 /**

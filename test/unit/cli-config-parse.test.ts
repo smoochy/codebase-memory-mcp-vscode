@@ -67,6 +67,13 @@ describe('optionsFromDescription', () => {
     assert.deepEqual(optionsFromDescription('Mode: fast or thorough'), ['fast', 'thorough'])
   })
 
+  it('ignores an absurdly long description rather than grinding over it', () => {
+    const long = ': a' + (' '.repeat(400) + ', a').repeat(300)
+    const started = Date.now()
+    assert.deepEqual(optionsFromDescription(long), [])
+    assert.ok(Date.now() - started < 100, 'took too long for a description this size')
+  })
+
   for (const prose of [
     'Max files for auto-indexing new projects',
     'Register background git watcher on session connect',

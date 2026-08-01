@@ -40,7 +40,37 @@ describe('shimContents', () => {
 
   it('execs on POSIX so the shim does not linger as a parent process', () => {
     const script = shimContents('/storage/bin/cmm', 'linux')
-    assert.equal(script, '#!/bin/sh\nexec "/storage/bin/cmm" "$@"\n')
+    assert.equal(script, "#!/bin/sh\nexec '/storage/bin/cmm' \"$@\"\n")
+  })
+
+  // cmd.exe expands %VAR% even inside double quotes, and a percent is legal in
+  // a Windows account name, so an unescaped one silently rewrites the path.
+  it('escapes a percent in a Windows path', () => {
+    const script = shimContents('C:/Users/a%TEMP%b/cmm.exe', 'win32')
+    assert.match(script, /"C:\\Users\\a%%TEMP%%b\\cmm\.exe" %\*/)
+  })
+
+  // Inside double quotes a POSIX shell still acts on $, a backtick and a
+  // backslash, all of which are legal in a path.
+  for (const [label, path] of [
+    ['a dollar sign', '/home/me/$(id)/cmm'],
+    ['a backtick', '/home/me/`id`/cmm'],
+    ['a double quote', '/home/me/a"b/cmm'],
+    ['a backslash', '/home/me/a\\b/cmm'],
+  ] as const) {
+    it(`neutralises ${label} on POSIX`, () => {
+      const script = shimContents(path, 'linux')
+      // Everything between the single quotes is inert; the only way out would
+      // be an unescaped single quote.
+      const body = script.split('\n')[1]!
+      assert.ok(body.startsWith("exec '"), body)
+      assert.equal(body.slice(6, body.indexOf("' \"$@\"")), path)
+    })
+  }
+
+  it('carries a single quote through by closing and reopening the quoting', () => {
+    const script = shimContents("/home/me/it's/cmm", 'linux')
+    assert.equal(script, "#!/bin/sh\nexec '/home/me/it'\\''s/cmm' \"$@\"\n")
   })
 })
 
