@@ -1,4 +1,5 @@
-import { latestReleaseUrl } from '../binary/assets'
+import { upstreamRepoUrl } from '../binary/assets'
+import { uninstallCommandFor } from '../constants'
 import type { ProjectSummary } from '../cli/client'
 import { allowedActions, type ExtensionState } from '../state/machine'
 
@@ -17,6 +18,8 @@ export interface PanelModel {
    * than staying blank and reading as a hang.
    */
   loading?: boolean
+  /** Which screen the panel shows. Uninstall replaces the whole view. */
+  view?: 'main' | 'uninstall'
 }
 
 /**
@@ -86,7 +89,8 @@ const ICONS: Record<string, string> = {
   // Reindex rebuilds the stored graph, so it reads as a database rather than a
   // second refresh arrow — two identical arrows side by side are a coin toss.
   reindex: '<ellipse cx="8" cy="4" rx="4.6" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.4 4v8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8V4M3.4 8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>',
-  trash: '<path d="M2.8 4.4h10.4M6.2 4.4V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.2M4.3 4.4v8a1.2 1.2 0 0 0 1.2 1.2h5a1.2 1.2 0 0 0 1.2-1.2v-8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
+  trash: '<path d="M2.8 4.4h10.4M6.2 4.4V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.2M4.3 4.4v8a1.2 1.2 0 0 0 1.2 1.2h5a1.2 1.2 0 0 0 1.2-1.2v-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
 }
 
 function icon(name: keyof typeof ICONS | string): string {
@@ -278,9 +282,42 @@ document.addEventListener('click', (event) => {
 </script>`
 }
 
+/**
+ * The uninstall screen, shown in place of the panel rather than as a dialog.
+ *
+ * The extension deliberately does not run this command: `uninstall` asks
+ * interactively whether to delete existing indexes and removes the binary
+ * itself, so both decisions stay visibly with the user in their own terminal.
+ */
+function uninstallScreen(model: PanelModel, nonce: string): string {
+  const command = uninstallCommandFor(model.state.activePath)
+  return (
+    '<main>' +
+    header(model) +
+    section(
+      'Uninstall CLI',
+      '<p class="lead">This removes the codebase-memory-mcp binary and its ' +
+        'registration. Run it yourself in a terminal — it asks whether to ' +
+        'delete the indexes it built, and that answer should be yours.</p>' +
+        `<pre class="cmd"><code>${escapeHtml(command)}</code></pre>` +
+        '<div class="actions">' +
+        button('betterCmm.copyUninstallCommand', 'Copy command', 'copy', 'primary') +
+        button('betterCmm.closeUninstall', 'Cancel', 'close') +
+        '</div>' +
+        '<p class="footnote">Uninstalling the CLI does not remove this ' +
+        'extension, and removing the extension does not remove the CLI.</p>',
+    ) +
+    '</main>' +
+    clickHandlerScript(nonce)
+  )
+}
+
 /** Header, notices, actions, project list. Static markup, no framework. */
 export function renderBody(model: PanelModel, nonce: string): string {
   const { state } = model
+  if (model.view === 'uninstall') {
+    return uninstallScreen(model, nonce)
+  }
   const actions = allowedActions(state)
   const loading = model.loading === true
   const parts: string[] = [header(model), binaryBar(model)]
@@ -294,8 +331,8 @@ export function renderBody(model: PanelModel, nonce: string): string {
         'Actions',
         `<div class="actions">${button('betterCmm.runSetup', 'Setup', 'download', 'primary')}</div>` +
           '<ul class="steps">' +
-          '<li>Installs the binary from the ' +
-          `<a href="${escapeHtml(latestReleaseUrl())}">latest upstream release</a></li>` +
+          '<li>Installs the binary from ' +
+          `<a href="${escapeHtml(upstreamRepoUrl())}">the upstream project</a></li>` +
           '<li>Registers it as an MCP server</li>' +
           '</ul>',
       ),
@@ -432,6 +469,15 @@ header {
   font-size: 11px; color: var(--muted); line-height: 1.6;
 }
 .steps a { color: var(--accent); }
+.lead { margin: 0 12px 10px; font-size: 12px; line-height: 1.55; }
+/* The command is selectable text, so it can be copied by hand as well. */
+.cmd {
+  margin: 0 12px 10px; padding: 9px 10px; border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--line);
+  font-family: var(--vscode-editor-font-family, monospace); font-size: 11px;
+  white-space: pre-wrap; word-break: break-all; user-select: text;
+}
+.footnote { margin: 10px 12px 0; font-size: 10px; color: var(--muted); line-height: 1.5; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;

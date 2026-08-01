@@ -61,6 +61,18 @@ export function latestReleaseUrl(): string {
   return `${RELEASES}/latest`
 }
 
+/**
+ * The upstream project page.
+ *
+ * Linked from the panel rather than a release URL: what `/releases/latest`
+ * resolves to is upstream's choice, so if they ever stop tagging that way the
+ * link would quietly point at an old build while the extension downloads a
+ * different one.
+ */
+export function upstreamRepoUrl(): string {
+  return `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}`
+}
+
 export function releaseNotesUrl(version: string): string {
   const tag = version.startsWith('v') ? version : `v${version}`
   assertPlainAssetName(tag)

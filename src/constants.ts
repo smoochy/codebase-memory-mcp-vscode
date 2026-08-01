@@ -20,3 +20,15 @@ export const MCP_SERVER_KEYS: readonly string[] = ['codebase-memory-mcp', 'codeb
 
 export const INSTALL_COMMAND = 'codebase-memory-mcp install'
 export const UNINSTALL_COMMAND = 'codebase-memory-mcp uninstall'
+
+/**
+ * The same command bound to a known binary.
+ *
+ * The bare name only works when the binary is on PATH, which it need not be —
+ * a managed install lives in the extension's own storage and is never added to
+ * PATH, so the plain command simply failed with "not recognised". Quoting is
+ * unconditional because the managed path contains spaces on most installs.
+ */
+export function uninstallCommandFor(binaryPath: string | null): string {
+  return binaryPath === null ? UNINSTALL_COMMAND : `"${binaryPath}" uninstall`
+}

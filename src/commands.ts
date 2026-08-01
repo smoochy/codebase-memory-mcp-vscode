@@ -11,4 +11,6 @@ export const COMMAND_IDS = [
   'betterCmm.showLogs',
   'betterCmm.openSettings',
   'betterCmm.reindex',
+  'betterCmm.showUninstall',
+  'betterCmm.closeUninstall',
 ] as const

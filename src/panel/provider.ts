@@ -13,6 +13,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined
   private model: PanelModel | undefined
   private lastHtml = ''
+  private view_: 'main' | 'uninstall' = 'main'
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -37,7 +38,18 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   }
 
   update(model: PanelModel): void {
-    this.model = model
+    // The view is panel state, not CLI state, so a refresh landing while the
+    // uninstall screen is open must not throw the user back to the main view.
+    this.model = { ...model, view: this.view_ }
+    this.render()
+  }
+
+  /** Switch between the main panel and the uninstall screen. */
+  setView(view: 'main' | 'uninstall'): void {
+    this.view_ = view
+    if (this.model !== undefined) {
+      this.model = { ...this.model, view }
+    }
     this.render()
   }
 
@@ -79,6 +91,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       updateAvailable: null,
       extensionVersion: this.extensionVersion,
       loading: true,
+      view: this.view_,
     }
     const nonce = makeNonce()
     const csp = contentSecurityPolicy(nonce, this.view.webview.cspSource)

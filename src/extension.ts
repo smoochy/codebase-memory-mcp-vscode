@@ -5,7 +5,7 @@ import { externalCandidates, findFirstExisting, managedBinaryPath } from './bina
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { COMMAND_IDS } from './commands'
-import { INSTALL_COMMAND, UNINSTALL_COMMAND } from './constants'
+import { INSTALL_COMMAND, uninstallCommandFor } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, truncateForLog } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
@@ -169,6 +169,35 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     panel.update({ state, projects, version, updateAvailable, extensionVersion })
   }
 
+  /**
+   * Run the CLI's own `install`, which is what writes the MCP entry.
+   *
+   * The state is resolved fresh rather than passed in: this runs straight
+   * after a download, so any state captured before it is already stale and
+   * would still report no binary.
+   */
+  const registerMcp = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const state = resolveState(storageDir)
+    if (state.activePath === null) {
+      return { ok: false, error: 'no binary to register' }
+    }
+    if (state.effectiveSource !== 'managed') {
+      return { ok: false, error: 'the active binary is not managed by the extension' }
+    }
+    try {
+      const output = await runProcess(state.activePath, ['install'], 120_000)
+      if (output.code !== 0) {
+        // The exit code was discarded before, so a failed registration looked
+        // exactly like a successful one.
+        const detail = output.stderr.trim() || output.stdout.trim() || 'no output'
+        return { ok: false, error: `install exited with ${String(output.code)}: ${detail}` }
+      }
+      return { ok: true }
+    } catch (cause) {
+      return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
+    }
+  }
+
   const fail = (what: string, cause: unknown): void => {
     const detail = cause instanceof Error ? cause.message : String(cause)
     log(`${what} failed: ${detail}`)
@@ -236,33 +265,65 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             ),
         )
         log(`setup installed ${tag}`)
+
+        // Registration is the second half of the same click. The panel offers
+        // Setup as "installs the binary" plus "registers it as an MCP server",
+        // so stopping after the download and asking the user to run a second
+        // command was the flow contradicting its own description.
+        const registered = await registerMcp()
         await refresh()
-        void vscode.window.showInformationMessage(
-          `codebase-memory-mcp ${tag} installed. ` +
-            `${wizardStepTitle('register-mcp')} is the next step — ` +
-            `run "Install CLI" so the CLI writes its own MCP entry.`,
-        )
+
+        if (registered.ok) {
+          void vscode.window.showInformationMessage(
+            `codebase-memory-mcp ${tag} installed and registered as an MCP server.`,
+          )
+        } else {
+          log(`setup: registration failed: ${registered.error}`)
+          void vscode.window
+            .showWarningMessage(
+              `codebase-memory-mcp ${tag} installed, but ${wizardStepTitle(
+                'register-mcp',
+              ).toLowerCase()} failed.`,
+              'View logs',
+            )
+            .then((choice) => {
+              if (choice === 'View logs') {
+                void vscode.commands.executeCommand('betterCmm.showLogs')
+              }
+            })
+        }
       } catch (cause) {
         fail('Setup', cause)
       }
     },
     'betterCmm.installCli': async () => {
-      const state = resolveState(storageDir)
-      if (state.activePath === null || state.effectiveSource !== 'managed') {
-        return
-      }
-      await runProcess(state.activePath, ['install'], 120_000)
+      const result = await registerMcp()
       await refresh()
+      if (!result.ok) {
+        fail('Register MCP server', new Error(result.error))
+      }
     },
     'betterCmm.copyInstallCommand': async () => {
       await vscode.env.clipboard.writeText(INSTALL_COMMAND)
       void vscode.window.showInformationMessage('Install command copied to the clipboard.')
     },
     'betterCmm.copyUninstallCommand': async () => {
-      await vscode.env.clipboard.writeText(UNINSTALL_COMMAND)
+      // Bound to the resolved binary: the bare name only works when the CLI is
+      // on PATH, and a managed install never is, so the copied command failed
+      // with "not recognised" exactly for the users who had not installed it
+      // themselves.
+      await vscode.env.clipboard.writeText(
+        uninstallCommandFor(resolveState(storageDir).activePath),
+      )
       void vscode.window.showInformationMessage(
         'Uninstall command copied. Run it in a terminal to remove codebase-memory-mcp itself.',
       )
+    },
+    'betterCmm.showUninstall': () => {
+      panel.setView('uninstall')
+    },
+    'betterCmm.closeUninstall': () => {
+      panel.setView('main')
     },
     'betterCmm.updateBinary': async () => {
       const state = resolveState(storageDir)

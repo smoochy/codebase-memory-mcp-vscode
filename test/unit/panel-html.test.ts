@@ -281,6 +281,58 @@ describe('renderBody', () => {
     assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   })
 
+  describe('uninstall screen', () => {
+    const uninstallModel = (activePath: string | null): PanelModel => ({
+      state: {
+        kind: 'ready-managed',
+        activePath,
+        effectiveSource: 'managed',
+        notice: null,
+        pathConflict: null,
+      },
+      projects: [],
+      version: '0.9.0',
+      updateAvailable: null,
+      view: 'uninstall',
+    })
+
+    it('replaces the panel rather than rendering alongside it', () => {
+      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
+      assert.match(html, /Uninstall CLI/)
+      // None of the normal panel belongs on this screen.
+      assert.doesNotMatch(html, /data-command="betterCmm\.addProject"/)
+      assert.doesNotMatch(html, /class="metrics"/)
+    })
+
+    it('shows the command bound to the resolved binary, not a bare alias', () => {
+      // The bare name only works when the CLI is on PATH; a managed install
+      // never is, so the copied command failed for exactly those users.
+      const html = renderBody(uninstallModel('C:/Program Files/cmm.exe'), 'n1')
+      assert.match(html, /&quot;C:\/Program Files\/cmm\.exe&quot; uninstall/)
+    })
+
+    it('falls back to the bare command when no binary is resolved', () => {
+      const html = renderBody(uninstallModel(null), 'n1')
+      assert.match(html, /codebase-memory-mcp uninstall/)
+    })
+
+    it('offers copying and a way back', () => {
+      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
+      assert.match(html, /data-command="betterCmm\.copyUninstallCommand"/)
+      assert.match(html, /data-command="betterCmm\.closeUninstall"/)
+    })
+
+    it('never runs the command itself, only shows it', () => {
+      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
+      assert.match(html, /Run it yourself in a terminal/)
+    })
+
+    it('escapes a hostile binary path in the command block', () => {
+      const html = renderBody(uninstallModel(XSS_PAYLOAD), 'n1')
+      assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+    })
+  })
+
   it('escapes a hostile git branch (also straight from the CLI)', () => {
     const html = renderBody(
       model({

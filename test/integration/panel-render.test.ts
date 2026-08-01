@@ -113,7 +113,7 @@ describe('panel renders in a real extension host', () => {
     // The CLI uninstall workflow has to be reachable from the UI; it existed
     // as a command but nothing surfaced it.
     assert.ok(
-      commands.includes('betterCmm.copyUninstallCommand'),
+      commands.includes('betterCmm.showUninstall'),
       'no CLI uninstall entry in the title bar menu',
     )
     for (const entry of title) {

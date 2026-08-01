@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -56,9 +56,8 @@
       },
       {
         "command": "betterCmm.copyUninstallCommand",
-        "title": "Uninstall CLI…",
-        "category": "Codebase Memory",
-        "icon": "$(trash)"
+        "title": "Copy Uninstall Command",
+        "category": "Codebase Memory"
       },
       {
         "command": "betterCmm.updateBinary",
@@ -96,6 +95,17 @@
         "command": "betterCmm.reindex",
         "title": "Reindex All Projects",
         "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.showUninstall",
+        "title": "Uninstall CLI…",
+        "category": "Codebase Memory",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "betterCmm.closeUninstall",
+        "title": "Close Uninstall Screen",
+        "category": "Codebase Memory"
       }
     ],
     "menus": {
@@ -111,7 +121,7 @@
           "group": "navigation@2"
         },
         {
-          "command": "betterCmm.copyUninstallCommand",
+          "command": "betterCmm.showUninstall",
           "when": "view == betterCmm.panel",
           "group": "9_uninstall@1"
         }
