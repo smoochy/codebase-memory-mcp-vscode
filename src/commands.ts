@@ -9,6 +9,7 @@ export const COMMAND_IDS = [
   'betterCmm.removeProject',
   'betterCmm.refresh',
   'betterCmm.showLogs',
+  'betterCmm.showEngineLogs',
   'betterCmm.openSettings',
   'betterCmm.reindex',
   'betterCmm.showSettings',

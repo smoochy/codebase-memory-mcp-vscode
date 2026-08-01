@@ -1,5 +1,19 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
+/** Ascending severity, so a threshold is a simple index comparison. */
+export const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error']
+
+/**
+ * Whether an entry at `level` passes the configured threshold.
+ *
+ * An unknown threshold keeps everything from `info` up rather than silently
+ * dropping entries: a typo in a setting must not hide the log that explains it.
+ */
+export function shouldLog(level: LogLevel, threshold: string): boolean {
+  const floor = LOG_LEVELS.indexOf(threshold as LogLevel)
+  return LOG_LEVELS.indexOf(level) >= (floor === -1 ? LOG_LEVELS.indexOf('info') : floor)
+}
+
 /** Longest single entry kept. Captured process output can reach megabytes. */
 export const MAX_LOG_ENTRY_CHARS = 8 * 1024
 

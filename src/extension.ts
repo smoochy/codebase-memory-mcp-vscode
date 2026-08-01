@@ -3,20 +3,21 @@ import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
-import { gitBashCandidates } from './binary/shells'
+import { engineLogDirectory, gitBashCandidates } from './binary/shells'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
-import { redactSecrets, truncateForLog } from './logging'
+import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
+import { formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
@@ -121,18 +122,28 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     // the wrapped CLI's JSON), so its command string must be checked against
     // the fixed set the extension actually registered before it is executed.
     if (!(COMMAND_IDS as readonly string[]).includes(command)) {
-      channel.appendLine(`ignored unknown command from webview: ${command}`)
+      warn(`ignored unknown command from webview: ${command}`)
       return
     }
+    debug(`panel: ${command}${project === undefined ? '' : ` (${project})`}`)
     void vscode.commands.executeCommand(command, project, value)
   }, extensionVersion)
 
-  // context.logUri is VS Code's own per-extension log directory, so the file
-  // sits where a user already looks for extension logs and gets cleaned up with
-  // the rest of them.
-  const logFile = new LogFile(context.logUri.fsPath)
+  // globalStorage, not context.logUri: VS Code creates a fresh log directory
+  // per window session, so the log that explains a crash is in the directory
+  // the crash ended and the next session starts an empty one. Here it
+  // accumulates across sessions and rotation is what bounds it.
+  const logFile = new LogFile(
+    join(storageDir, 'logs'),
+    'better-cmm.log',
+    Math.max(1, setting('logMaxSizeMb', 1)) * 1024 * 1024,
+    Math.max(1, setting('logKeptFiles', 3)),
+  )
 
-  const log = (message: string): void => {
+  const logAt = (level: LogLevel, message: string): void => {
+    if (!shouldLog(level, setting('logLevel', 'info'))) {
+      return
+    }
     // Anything derived from a URL, header or process output goes through the
     // redactor before it can land in a log the user pastes into an issue.
     // Captured process output runs to megabytes (see MAX_CAPTURED_OUTPUT), and
@@ -140,8 +151,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     // times over, and later be opened in an editor. The head is the part that
     // says what went wrong.
     const safe = truncateForLog(redactSecrets(message))
-    channel.appendLine(safe)
-    logFile.append('info', safe, new Date().toISOString())
+    channel.appendLine(`[${level.toUpperCase()}] ${safe}`)
+    logFile.append(level, safe, new Date().toISOString())
+  }
+
+  const log = (message: string): void => {
+    logAt('info', message)
+  }
+  const debug = (message: string): void => {
+    logAt('debug', message)
+  }
+  const warn = (message: string): void => {
+    logAt('warn', message)
   }
 
   // One line on every activation, so a log a user attaches to a bug report
@@ -226,6 +247,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     }
 
+    debug(
+      `refresh: ${state.kind}, source ${String(state.effectiveSource)}, ` +
+        `${String(projects.length)} project(s), CLI ${version ?? 'unknown'}`,
+    )
     panel.update({
       state,
       projects,
@@ -374,10 +399,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
               `codebase-memory-mcp ${tag} installed, but ${wizardStepTitle(
                 'register-mcp',
               ).toLowerCase()} failed.`,
-              'View logs',
+              'View extension log',
             )
             .then((choice) => {
-              if (choice === 'View logs') {
+              if (choice === 'View extension log') {
                 void vscode.commands.executeCommand('betterCmm.showLogs')
               }
             })
@@ -451,6 +476,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.showSettings': async () => {
+      debug('opening the settings screen')
       panel.setView('settings')
       await refreshCliSettings()
     },
@@ -459,6 +485,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.copyBinaryDir': async () => {
+      debug('copying the binary folder')
       const active = resolveState(storageDir, ownedInstallPath()).activePath
       if (active === null) {
         return
@@ -543,6 +570,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.addProject': async () => {
+      log('add repositories: opening the folder picker')
       const picked = await vscode.window.showOpenDialog({
         canSelectFolders: true,
         canSelectFiles: false,
@@ -576,9 +604,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (failures.length > 0) {
         void vscode.window.showErrorMessage(
           `Could not index ${String(failures.length)} of ${String(picked.length)} repositories.`,
-          'View logs',
+          'View extension log',
         ).then((choice) => {
-          if (choice === 'View logs') {
+          if (choice === 'View extension log') {
             void vscode.commands.executeCommand('betterCmm.showLogs')
           }
         })
@@ -614,6 +642,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     // searched, and attached to a bug report, and it survives a window reload.
     // Falls back to the channel when nothing has been written yet.
     'betterCmm.showLogs': async () => {
+      debug('opening the extension log')
       try {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile.path))
         await vscode.window.showTextDocument(document, { preview: false })
@@ -621,10 +650,52 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         channel.show(false)
       }
     },
+    'betterCmm.showEngineLogs': async () => {
+      // The engine writes one file per connected client plus one per indexing
+      // worker, and the interesting one is whichever moved last - so they are
+      // offered newest first rather than guessed at.
+      const directory = engineLogDirectory(homedir())
+      let entries: { label: string; description: string; path: string }[] = []
+      try {
+        entries = readdirSync(directory)
+          .filter((name) => name.endsWith('.log'))
+          .map((name) => {
+            const full = join(directory, name)
+            const stats = statSync(full)
+            return {
+              label: name,
+              description: `${formatBytes(stats.size)}, ${stats.mtime.toLocaleString()}`,
+              path: full,
+              at: stats.mtimeMs,
+            }
+          })
+          .sort((a, b) => b.at - a.at)
+      } catch (cause) {
+        debug(`engine log directory unreadable: ${cause instanceof Error ? cause.message : ''}`)
+      }
+      if (entries.length === 0) {
+        void vscode.window.showInformationMessage(
+          `No engine logs yet. The CLI writes them to ${directory} once it runs.`,
+        )
+        return
+      }
+      const picked = await vscode.window.showQuickPick(entries, {
+        title: 'Engine logs',
+        placeHolder: 'Written by codebase-memory-mcp itself, newest first',
+      })
+      if (picked === undefined) {
+        return
+      }
+      log(`opening engine log ${picked.label}`)
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(picked.path))
+      await vscode.window.showTextDocument(document, { preview: false })
+    },
     'betterCmm.openSettings': async () => {
+      debug('opening the VS Code settings UI')
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
     },
     'betterCmm.reindex': async () => {
+      log('reindex requested')
       const state = resolveState(storageDir, ownedInstallPath())
       if (state.activePath === null || projects.length === 0) {
         return
@@ -651,10 +722,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         void vscode.window
           .showErrorMessage(
             `Could not reindex ${String(failures.length)} of ${String(roots.length)} projects.`,
-            'View logs',
+            'View extension log',
           )
           .then((choice) => {
-            if (choice === 'View logs') {
+            if (choice === 'View extension log') {
               void vscode.commands.executeCommand('betterCmm.showLogs')
             }
           })

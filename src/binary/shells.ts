@@ -1,4 +1,15 @@
 /**
+ * Where the CLI keeps its own logs.
+ *
+ * Separate from the extension's log and worth reaching: the extension records
+ * what it asked for, the engine records what happened inside indexing - the
+ * worker crashes the extension only ever sees as an exit code land here.
+ */
+export function engineLogDirectory(home: string): string {
+  return `${home.replace(/\\/g, '/')}/.cache/codebase-memory-mcp/logs`
+}
+
+/**
  * Where Git Bash lives when it is installed.
  *
  * Checked rather than assumed: offering a Git Bash command line to someone

@@ -596,7 +596,8 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // No Refresh button here: the title bar already has one, running the same
   // command, and two identical controls in one view only raise the question of
   // how they differ.
-  buttons.push(button('betterCmm.showLogs', 'View logs', 'logs'))
+  buttons.push(button('betterCmm.showLogs', 'View extension log', 'logs'))
+  buttons.push(button('betterCmm.showEngineLogs', 'View engine logs', 'logs'))
 
   parts.push(section('Actions', `<div class="actions">${buttons.join('')}</div>`))
   parts.push(section('Projects', projectCards(model.projects, loading)))

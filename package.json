@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -82,7 +82,7 @@
       },
       {
         "command": "betterCmm.showLogs",
-        "title": "Show Logs",
+        "title": "View Extension Log",
         "category": "Codebase Memory"
       },
       {
@@ -125,6 +125,11 @@
       {
         "command": "betterCmm.removeManagedBinary",
         "title": "Remove Managed Binary",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.showEngineLogs",
+        "title": "View Engine Logs",
         "category": "Codebase Memory"
       }
     ],
@@ -211,7 +216,21 @@
             "error"
           ],
           "default": "info",
-          "description": "Verbosity of the extension log."
+          "description": "Lowest severity written to the extension log. Debug records every action."
+        },
+        "betterCmm.logMaxSizeMb": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Size in megabytes a log file may reach before it is rotated."
+        },
+        "betterCmm.logKeptFiles": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "How many rotated log files to keep besides the current one."
         }
       }
     }

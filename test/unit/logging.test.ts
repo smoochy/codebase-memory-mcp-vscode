@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { formatLine, redactSecrets, shouldRotate , truncateForLog, MAX_LOG_ENTRY_CHARS } from '../../src/logging'
+import { formatLine, redactSecrets, shouldRotate , truncateForLog, MAX_LOG_ENTRY_CHARS , shouldLog } from '../../src/logging'
 
 describe('formatLine', () => {
   // An editor treats a lone CR as a line break, so untrusted process output
@@ -251,5 +251,29 @@ describe('truncateForLog', () => {
     assert.ok(result.length < MAX_LOG_ENTRY_CHARS + 100)
     assert.match(result, /500 more characters omitted/)
     assert.ok(result.startsWith('x'.repeat(100)))
+  })
+})
+
+describe('shouldLog', () => {
+  it('keeps entries at or above the threshold', () => {
+    assert.equal(shouldLog('error', 'warn'), true)
+    assert.equal(shouldLog('warn', 'warn'), true)
+  })
+
+  it('drops entries below it', () => {
+    assert.equal(shouldLog('debug', 'info'), false)
+    assert.equal(shouldLog('info', 'error'), false)
+  })
+
+  it('records everything at debug', () => {
+    for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+      assert.equal(shouldLog(level, 'debug'), true)
+    }
+  })
+
+  // A typo in a setting must not silently hide the log that explains it.
+  it('falls back to info for an unknown threshold', () => {
+    assert.equal(shouldLog('debug', 'verbose'), false)
+    assert.equal(shouldLog('info', 'verbose'), true)
   })
 })

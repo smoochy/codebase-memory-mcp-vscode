@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { gitBashCandidates } from '../../src/binary/shells'
+import { engineLogDirectory, gitBashCandidates } from '../../src/binary/shells'
 
 describe('gitBashCandidates', () => {
   it('looks where Git for Windows installs itself', () => {
@@ -24,6 +24,24 @@ describe('gitBashCandidates', () => {
     assert.deepEqual(
       gitBashCandidates({ programFiles: undefined, programFilesX86: undefined, localAppData: '' }),
       [],
+    )
+  })
+})
+
+describe('engineLogDirectory', () => {
+  // Verified against the real machine: the CLI names this directory in its own
+  // crash output, e.g. log=C:/Users/<me>/.cache/codebase-memory-mcp/logs/...
+  it('points at the cache directory the CLI writes to', () => {
+    assert.equal(
+      engineLogDirectory('C:/Users/me'),
+      'C:/Users/me/.cache/codebase-memory-mcp/logs',
+    )
+  })
+
+  it('normalises a Windows home with backslashes', () => {
+    assert.equal(
+      engineLogDirectory('C:\\Users\\me'),
+      'C:/Users/me/.cache/codebase-memory-mcp/logs',
     )
   })
 })
