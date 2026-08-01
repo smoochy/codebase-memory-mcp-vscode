@@ -3,7 +3,7 @@ import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
-import { gitBashCandidates, installedCopyPath, mayReplace, shimContents, shimDirectory, shimPath } from './binary/shim'
+import { gitBashCandidates } from './binary/shells'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
@@ -14,7 +14,7 @@ import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
@@ -29,7 +29,7 @@ function resolveState(storageDir: string): ExtensionState {
   const source = setting<BinarySource>('binarySource', 'auto')
   const configured = setting<string>('externalBinaryPath', '').trim()
 
-  const managed = managedBinaryPath(storageDir, process.platform)
+  const managed = managedBinaryPath(homedir(), process.platform)
   const external =
     configured.length > 0 && existsSync(configured)
       ? configured
@@ -39,7 +39,12 @@ function resolveState(storageDir: string): ExtensionState {
             home: homedir(),
             pathVar: process.env['PATH'] ?? '',
             pathSeparator: delimiter,
-          }),
+          })
+            // The managed binary now lives on PATH, which is also the first
+            // place the external search looks. Without this the extension
+            // finds its own install, calls it the user's, and then refuses to
+            // update or re-register it.
+            .filter((candidate) => candidate !== managed),
           existsSync,
         )
 
@@ -211,7 +216,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       restartRequired,
       platform: process.platform,
       gitBashAvailable: gitBashAvailable(),
-      managedBinaryPresent: existsSync(managedBinaryPath(storageDir, process.platform)),
+      managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
     })
   }
 
@@ -253,56 +258,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       localAppData: process.env['LOCALAPPDATA'],
     }).some(existsSync)
 
-  /**
-   * Replace the full copy the CLI's installer leaves on PATH with a launcher.
-   *
-   * The CLI's `install` copies the whole ~36 MB binary into ~/.local/bin. That
-   * leaves two independent copies which drift apart the moment one is updated,
-   * and it is not what a user who asked the extension to manage the binary
-   * expects to find on their PATH. The managed install stays the only real
-   * copy; PATH gets a launcher pointing at it.
-   */
-  const installShim = (managedPath: string, replaceExistingCopy: boolean): void => {
-    const home = homedir()
-    const shim = shimPath(home, process.platform)
-    const copy = installedCopyPath(home, process.platform)
-    if (!replaceExistingCopy) {
-      // The binary on PATH was already there before this run, so it is the
-      // user's, not ours. The extension does not modify an installation it
-      // does not own, and that has to hold here too.
-      log('left the existing binary on PATH alone; no launcher written')
-      return
-    }
-    try {
-      mkdirSync(shimDirectory(home), { recursive: true })
-      // Only ever the two names in that one directory, never anything else.
-      if (existsSync(copy) && copy !== managedPath && mayReplace(copy, home, process.platform)) {
-        rmSync(copy, { force: true })
-        log(`replaced the installed copy at ${copy} with a launcher`)
-      }
-      // Unlink first, then create exclusively. writeFileSync and chmodSync both
-      // follow symlinks, so a link planted at this name - even a dangling one,
-      // which existsSync reports as absent - would have this write create the
-      // attacker's target and mark it executable. rmSync removes the link
-      // itself, and 'wx' refuses any name that reappears in between.
-      rmSync(shim, { force: true })
-      const handle = openSync(shim, 'wx', 0o755)
-      try {
-        writeFileSync(handle, shimContents(managedPath, process.platform), 'utf8')
-        if (process.platform !== 'win32') {
-          // On the descriptor, so it cannot be redirected, and so a restrictive
-          // umask does not leave the launcher unexecutable.
-          fchmodSync(handle, 0o755)
-        }
-      } finally {
-        closeSync(handle)
-      }
-    } catch (cause) {
-      // A missing launcher costs a PATH entry, not the installation.
-      log(`could not write the launcher: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
-  }
-
   const fail = (what: string, cause: unknown): void => {
     const detail = cause instanceof Error ? cause.message : String(cause)
     log(`${what} failed: ${detail}`)
@@ -338,6 +293,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     platform: process.platform,
     arch: process.arch,
     storageDir,
+    installPath: managedBinaryPath(homedir(), process.platform),
     log,
     onStep: report,
   })
@@ -352,7 +308,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return
       }
 
-      const managed = managedBinaryPath(storageDir, process.platform)
+      const managed = managedBinaryPath(homedir(), process.platform)
       if (existsSync(managed) && state.kind === 'ready-managed') {
         // Already installed and registered - nothing to download.
         await refresh()
@@ -365,7 +321,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const title = firstStep === undefined ? 'Better Codebase Memory MCP' : firstStep.title
 
       try {
-        const copyWasThere = existsSync(installedCopyPath(homedir(), process.platform))
       const { tag } = await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title },
           async (progress) =>
@@ -382,7 +337,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const registered = await registerMcp()
         if (registered.ok) {
           restartRequired = true
-          installShim(managedBinaryPath(storageDir, process.platform), !copyWasThere)
         }
         await refresh()
 
@@ -442,32 +396,31 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       void vscode.window.showInformationMessage('Uninstall command copied for Git Bash.')
     },
     'betterCmm.removeManagedBinary': async () => {
-      const managed = managedBinaryPath(storageDir, process.platform)
+      const managed = managedBinaryPath(homedir(), process.platform)
       if (!existsSync(managed)) {
         return
       }
       const confirmed = await vscode.window.showWarningMessage(
-        'Remove the copy this extension installed, and its launcher on your PATH?',
-        { modal: true, detail: 'Indexes and MCP entries are not touched.' },
+        'Remove the binary this extension installed?',
+        {
+          modal: true,
+          detail:
+            `${managed}\n\n` +
+            'Indexes are not touched. The MCP entry stays behind and will ' +
+            'point at a binary that is gone, so run the uninstall command ' +
+            'above if you want that removed too.',
+        },
         'Remove',
       )
       if (confirmed !== 'Remove') {
         return
       }
-      const home = homedir()
-      const shim = shimPath(home, process.platform)
-      for (const target of [managed, shim]) {
-        try {
-          // The managed copy lives in the extension's own storage; the shim is
-          // matched against the one name in the one directory it may occupy.
-          if (target === managed || mayReplace(target, home, process.platform)) {
-            rmSync(target, { force: true })
-            log(`removed ${target}`)
-          }
-        } catch (cause) {
-          fail('Removing the managed binary', cause)
-          return
-        }
+      try {
+        rmSync(managed, { force: true })
+        log(`removed ${managed}`)
+      } catch (cause) {
+        fail('Removing the managed binary', cause)
+        return
       }
       await refresh()
     },

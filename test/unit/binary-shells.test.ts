@@ -1,0 +1,29 @@
+import * as assert from 'node:assert/strict'
+import { gitBashCandidates } from '../../src/binary/shells'
+
+describe('gitBashCandidates', () => {
+  it('looks where Git for Windows installs itself', () => {
+    const found = gitBashCandidates({
+      programFiles: 'C:\\Program Files',
+      programFilesX86: undefined,
+      localAppData: undefined,
+    })
+    assert.ok(found.includes('C:/Program Files/Git/bin/bash.exe'))
+  })
+
+  it('covers a per-user install under LocalAppData', () => {
+    const found = gitBashCandidates({
+      programFiles: undefined,
+      programFilesX86: undefined,
+      localAppData: 'C:/Users/me/AppData/Local',
+    })
+    assert.ok(found.includes('C:/Users/me/AppData/Local/Programs/Git/bin/bash.exe'))
+  })
+
+  it('yields nothing when the environment says nothing', () => {
+    assert.deepEqual(
+      gitBashCandidates({ programFiles: undefined, programFilesX86: undefined, localAppData: '' }),
+      [],
+    )
+  })
+})

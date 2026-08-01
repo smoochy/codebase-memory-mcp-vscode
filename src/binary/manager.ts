@@ -1,7 +1,6 @@
 import { assetName, binaryFileName, checksumsUrl, downloadUrl, type Variant } from './assets'
 import { downloadVerified, followRedirects, resolveLatestTag, type FetchLike } from './fetch'
 import { extractCommand, replaceBinary, type FileOps } from './install'
-import { managedBinaryPath } from './locate'
 import type { Runner } from '../cli/client'
 import type { BinarySource, ExtensionState } from '../state/machine'
 import type { WizardStepId } from '../setup/wizard'
@@ -35,8 +34,16 @@ export interface InstallDeps {
   ops: InstallFileOps
   platform: NodeJS.Platform
   arch: string
-  /** Extension global storage directory. Nothing is written outside it. */
+  /** Work area for the download and extraction. Scratch only. */
   storageDir: string
+  /**
+   * Absolute path the finished binary is moved to.
+   *
+   * Separate from storageDir because the CLI registers this exact path as its
+   * MCP server command, so it has to be the one on PATH rather than a private
+   * location the extension chose.
+   */
+  installPath: string
   variant?: Variant
   /** Progress log sink. Callers redact before forwarding to a channel. */
   log?: (message: string) => void
@@ -131,7 +138,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
     }
 
     const extracted = findExtractedBinary(extractDir, platform, ops)
-    const target = managedBinaryPath(storageDir, platform)
+    const target = deps.installPath
 
     // No dedicated wizard step for this instant, in-process move; it is still
     // covered by the 'verify-binary' step the user is looking at.

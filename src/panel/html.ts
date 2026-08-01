@@ -404,12 +404,12 @@ function uninstallBlock(model: PanelModel): string {
     'should be yours.</p>' +
     lines +
     (model.managedBinaryPresent === true
-      ? '<p class="lead">This extension also keeps its own copy, and a small ' +
-        'launcher on your PATH that points at it. Those are the extension\'s to ' +
-        'remove, so it can do that for you.</p>' +
+      ? '<p class="lead">The binary this extension installed is its own to ' +
+        'remove, so it can do that for you without a terminal. That leaves the ' +
+        'MCP entry behind, which is what the command above clears.</p>' +
         `<div class="actions">${button(
           'betterCmm.removeManagedBinary',
-          'Remove the managed copy and launcher',
+          'Remove the installed binary',
           'trash',
           'danger',
         )}</div>`

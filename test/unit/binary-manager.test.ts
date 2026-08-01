@@ -109,6 +109,9 @@ function baseDeps(overrides: Partial<InstallDeps> = {}): InstallDeps {
     platform: PLATFORM,
     arch: ARCH,
     storageDir: STORAGE,
+    // The install target is now explicit: the CLI registers this exact path
+    // as its MCP command, so it is not derived from the storage directory.
+    installPath: `${STORAGE}/bin/codebase-memory-mcp`,
     ...overrides,
     ops,
     run: overrides.run ?? extractingRun(ops, runCalls),

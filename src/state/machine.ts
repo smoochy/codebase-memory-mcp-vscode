@@ -75,14 +75,22 @@ export function computeState(input: StateInput): ExtensionState {
     } else {
       kind = 'needs-setup'
     }
+  } else if (managedPath !== null) {
+    // Under `auto` a managed install wins once it exists. It can only exist
+    // because the user ran Setup, and Setup is refused while an external
+    // binary is active, so its presence is a deliberate choice rather than a
+    // leftover. It also has to win for correctness: Setup registers the
+    // managed path as the MCP command, and letting some other binary become
+    // active afterwards leaves the entry aimed at a different file. A
+    // pre-existing installation is still preferred when no managed one is
+    // there, which is the point of `auto`.
+    activePath = managedPath
+    effectiveSource = 'managed'
+    kind = 'ready-managed'
   } else if (externalPath !== null) {
     activePath = externalPath
     effectiveSource = 'external'
     kind = 'ready-external'
-  } else if (managedPath !== null) {
-    activePath = managedPath
-    effectiveSource = 'managed'
-    kind = 'ready-managed'
   } else {
     kind = 'needs-setup'
   }

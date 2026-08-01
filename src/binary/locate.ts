@@ -60,9 +60,22 @@ export function externalCandidates(env: LocateEnv): string[] {
   return [...new Set([...wellKnown, ...fromPath])]
 }
 
-/** Where the extension keeps the binary it manages itself. */
-export function managedBinaryPath(storageDir: string, platform: NodeJS.Platform): string {
-  return join(storageDir.replace(/\\/g, '/'), 'bin', binaryFileName(platform))
+/**
+ * Where the extension keeps the binary it manages itself.
+ *
+ * `~/.local/bin`, not the extension's storage, because the CLI's own `install`
+ * writes an MCP entry pointing at exactly this path. Keeping the binary
+ * anywhere else leaves that entry aimed at a file the extension moved, and the
+ * server never starts. A launcher script cannot stand in for it either: the
+ * MCP entry names the executable directly.
+ *
+ * This is also the first location `externalCandidates` searches, so callers
+ * must exclude this path when deciding whether a *user's* installation exists,
+ * or the extension mistakes its own binary for someone else's and refuses to
+ * update it.
+ */
+export function managedBinaryPath(home: string, platform: NodeJS.Platform): string {
+  return join(home.replace(/\\/g, '/'), '.local/bin', binaryFileName(platform))
 }
 
 /**

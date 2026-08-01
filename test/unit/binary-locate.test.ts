@@ -76,12 +76,34 @@ describe('externalCandidates', () => {
 })
 
 describe('managedBinaryPath', () => {
-  it('lives under the storage directory', () => {
+  // On PATH, not in extension storage: the CLI's own `install` registers this
+  // exact path as the MCP server command, so a binary kept anywhere else
+  // leaves that entry pointing at a file that is not there.
+  it('lives on PATH, where the MCP entry will point', () => {
     assert.equal(
-      managedBinaryPath('C:/storage', 'win32'),
-      'C:/storage/bin/codebase-memory-mcp.exe',
+      managedBinaryPath('C:/Users/me', 'win32'),
+      'C:/Users/me/.local/bin/codebase-memory-mcp.exe',
     )
-    assert.equal(managedBinaryPath('/storage', 'linux'), '/storage/bin/codebase-memory-mcp')
+    assert.equal(managedBinaryPath('/home/me', 'linux'), '/home/me/.local/bin/codebase-memory-mcp')
+  })
+
+  it('normalises a Windows home with backslashes', () => {
+    assert.equal(
+      managedBinaryPath('C:\\Users\\me', 'win32'),
+      'C:/Users/me/.local/bin/codebase-memory-mcp.exe',
+    )
+  })
+
+  // The same path the external search looks at first, which is why the caller
+  // has to exclude it before deciding a user installation exists.
+  it('matches the first external candidate, by design', () => {
+    const candidates = externalCandidates({
+      platform: 'linux',
+      home: '/home/me',
+      pathVar: '',
+      pathSeparator: ':',
+    })
+    assert.equal(candidates[0], managedBinaryPath('/home/me', 'linux'))
   })
 })
 

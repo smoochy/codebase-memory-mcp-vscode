@@ -28,10 +28,24 @@ describe('computeState', () => {
     assert.equal(state.activePath, null)
   })
 
-  it('prefers the external binary under auto', () => {
+  // Under auto a managed install wins once it exists. It can only exist
+  // because the user ran Setup, and Setup is refused while an external binary
+  // is active, so it is a deliberate choice. It also has to win for
+  // correctness: Setup registers the managed path as the MCP command, and
+  // another binary becoming active afterwards leaves that entry aimed
+  // elsewhere - which is exactly the conflict this rule was changed to fix.
+  it('prefers the managed binary under auto once one has been installed', () => {
     const state = computeState(
-      input({ managedPath: MANAGED, externalPath: EXTERNAL, registration: present(EXTERNAL) }),
+      input({ managedPath: MANAGED, externalPath: EXTERNAL, registration: present(MANAGED) }),
     )
+    assert.equal(state.kind, 'ready-managed')
+    assert.equal(state.activePath, MANAGED)
+    assert.equal(state.effectiveSource, 'managed')
+    assert.equal(state.pathConflict, null)
+  })
+
+  it('prefers an existing installation under auto when nothing is managed', () => {
+    const state = computeState(input({ externalPath: EXTERNAL, registration: present(EXTERNAL) }))
     assert.equal(state.kind, 'ready-external')
     assert.equal(state.activePath, EXTERNAL)
     assert.equal(state.effectiveSource, 'external')
@@ -192,9 +206,7 @@ describe('allowedActions', () => {
 
   it('follows the resolved binary under auto, not the literal setting', () => {
     const external = allowedActions(
-      computeState(
-        input({ managedPath: MANAGED, externalPath: EXTERNAL, registration: present(EXTERNAL) }),
-      ),
+      computeState(input({ externalPath: EXTERNAL, registration: present(EXTERNAL) })),
     )
     assert.equal(external.mayWriteMcpConfig, false)
 
