@@ -213,6 +213,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   /** Reindexes already running, so two of them never touch one store at once. */
   const inFlight = new Set<string>()
 
+  /** Projects already reported as outdated, so the log says it once per change. */
+  const reportedStale = new Set<string>()
+
   /** Fallback timestamp: the mtime of the store file the CLI writes per project. */
   const storeMtime = (name: string): number | undefined => {
     const store = projectStorePath(homedir(), name)
@@ -234,7 +237,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       warn(`ignored unknown command from webview: ${command}`)
       return
     }
-    debug(`panel: ${command}${project === undefined ? '' : ` (${project})`}`)
     void vscode.commands.executeCommand(command, project, value)
   }, extensionVersion)
 
@@ -310,6 +312,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     )
   let previousSettings = snapshotSettings()
 
+  /** Assigned once the timers exist, further down. */
+  let rearmTimers: () => void = () => {
+    /* not armed yet */
+  }
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('betterCmm')) {
@@ -331,6 +338,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         current.get('logKeptFiles') !== before.get('logKeptFiles')
       ) {
         debug('log size settings take effect after the window is reloaded')
+      }
+      // Both intervals are read when the timers are armed, so switching either
+      // one on has to re-arm them - otherwise the setting appears to do nothing
+      // until the window is reloaded.
+      if (
+        ['autoRefresh', 'refreshIntervalSeconds', 'autoReindex', 'autoReindexIntervalSeconds'].some(
+          (key) => current.get(key) !== before.get(key),
+        )
+      ) {
+        rearmTimers()
       }
       void refresh()
     }),
@@ -419,15 +436,26 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const record = records[project.name]
         return {
           ...project,
-          // Our own note first. The store file's mtime is the fallback for a
-          // project this extension has never indexed itself - it is the only
-          // other trace of when the index was built, but an unchanged reindex
-          // does not touch the file, so it cannot stand on its own.
-          indexed_at_ms: record?.at ?? storeMtime(project.name),
+          // The store file's mtime, not the time of the last reindex request.
+          // Indexing is incremental: a reindex that finds nothing changed does
+          // not touch the file, and reporting "just now" for it claimed work
+          // that did not happen. This is when the index last actually changed.
+          indexed_at_ms: storeMtime(project.name) ?? record?.at,
           stale:
             record?.sha != null && head !== null ? record.sha !== head : undefined,
         }
       })
+
+      // Say it once per project, when it changes: a refresh runs every few
+      // seconds, and repeating "outdated" on every tick buries the log.
+      for (const project of projects) {
+        if (project.stale === true && !reportedStale.has(project.name)) {
+          reportedStale.add(project.name)
+          log(`"${project.name}" (${project.root_path}) is outdated: the checkout moved to another commit`)
+        } else if (project.stale !== true) {
+          reportedStale.delete(project.name)
+        }
+      }
 
       if (result.ok) {
         // Only prune against a list that actually arrived; a failed call would
@@ -692,7 +720,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.showSettings': async () => {
-      debug('opening the settings screen')
       panel.setView('settings')
       await refreshCliSettings()
     },
@@ -881,7 +908,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     // searched, and attached to a bug report, and it survives a window reload.
     // Falls back to the channel when nothing has been written yet.
     'betterCmm.showLogs': async () => {
-      debug('opening the extension log')
       try {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile.path))
         await vscode.window.showTextDocument(document, { preview: false })
@@ -956,7 +982,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (picked === undefined) {
         return
       }
-      log(`opening engine log ${picked.label}`)
+      log(`User: opening engine log ${picked.label}`)
       try {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(picked.path))
         await vscode.window.showTextDocument(document, { preview: false })
@@ -968,7 +994,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.openSettings': async () => {
-      debug('opening the VS Code settings UI')
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
     },
     'betterCmm.reindexProject': async (name) => {
@@ -1116,6 +1141,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     const due = projects.filter(
       (project) => project.stale === true && !inFlight.has(project.name),
     )
+    debug(
+      `Auto: checked ${String(projects.length)} project(s), ${String(due.length)} to reindex`,
+    )
     if (due.length === 0) {
       return
     }
@@ -1150,48 +1178,76 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     await refresh()
   }
 
-  if (setting('autoReindex', false)) {
-    const seconds = numberSetting('autoReindexIntervalSeconds', 300, 30, 3600)
-    log(`auto reindex on, checking every ${String(seconds)}s`)
-    // One tick at a time: a single index may take minutes, far longer than the
-    // interval floor, and a second tick would start on the same repositories.
-    let ticking = false
-    const timer = setInterval(() => {
-      if (ticking) {
-        return
-      }
-      ticking = true
-      // Nothing here may throw out of the callback: an unhandled rejection in a
-      // timer takes the whole loop down and auto reindex silently stops.
-      void autoReindexTick()
-        .catch((cause: unknown) => {
-          warn(`auto reindex tick failed: ${cause instanceof Error ? cause.message : String(cause)}`)
-        })
-        .finally(() => {
-          ticking = false
-        })
-    }, seconds * 1000)
-    context.subscriptions.push({ dispose: () => { clearInterval(timer) } })
+  // One tick at a time: a single index may take minutes, far longer than the
+  // interval floor, and a second tick would start on the same repositories.
+  let ticking = false
+  let autoReindexTimer: NodeJS.Timeout | undefined
+
+  /**
+   * (Re)arm both timers from the settings as they stand now.
+   *
+   * Called again whenever the settings change, because reading them once at
+   * activation meant switching auto reindex on did nothing at all until the
+   * window was reloaded - it looked exactly like a broken feature.
+   */
+  const armTimers = (): void => {
+    if (autoReindexTimer !== undefined) {
+      clearInterval(autoReindexTimer)
+      autoReindexTimer = undefined
+    }
+    if (refreshTimer !== undefined) {
+      clearInterval(refreshTimer)
+      refreshTimer = undefined
+    }
+
+    if (setting('autoReindex', false)) {
+      const seconds = numberSetting('autoReindexIntervalSeconds', 300, 30, 3600)
+      log(`auto reindex armed, checking every ${String(seconds)}s`)
+      autoReindexTimer = setInterval(() => {
+        if (ticking) {
+          debug('auto reindex: previous check still running, skipping this one')
+          return
+        }
+        ticking = true
+        // Nothing here may throw out of the callback: an unhandled rejection in
+        // a timer takes the whole loop down and auto reindex silently stops.
+        void autoReindexTick()
+          .catch((cause: unknown) => {
+            warn(
+              `auto reindex tick failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+            )
+          })
+          .finally(() => {
+            ticking = false
+          })
+      }, seconds * 1000)
+    }
+
+    // Polling only, no FileSystemWatcher: the CLI watches files itself.
+    if (setting('autoRefresh', true)) {
+      const seconds = numberSetting('refreshIntervalSeconds', 30, 5, 3600)
+      refreshTimer = setInterval(() => {
+        if (panel.isVisible && !panel.isOnSubScreen) {
+          void refresh()
+        }
+      }, seconds * 1000)
+    }
   }
 
-  // Polling only, no FileSystemWatcher: the CLI watches files itself.
-  if (setting('autoRefresh', true)) {
-    const seconds = numberSetting('refreshIntervalSeconds', 30, 5, 3600)
-    refreshTimer = setInterval(() => {
-      if (panel.isVisible && !panel.isOnSubScreen) {
-        void refresh()
+  rearmTimers = armTimers
+  armTimers()
+  context.subscriptions.push({
+    dispose: () => {
+      if (autoReindexTimer !== undefined) {
+        clearInterval(autoReindexTimer)
+        autoReindexTimer = undefined
       }
-    }, seconds * 1000)
-    const timer = refreshTimer
-    context.subscriptions.push({
-      dispose: () => {
-        clearInterval(timer)
-        if (refreshTimer === timer) {
-          refreshTimer = undefined
-        }
-      },
-    })
-  }
+      if (refreshTimer !== undefined) {
+        clearInterval(refreshTimer)
+        refreshTimer = undefined
+      }
+    },
+  })
 
   void refresh()
 

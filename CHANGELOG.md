@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.1]
+
+- The index time now follows the mtime of the store file the CLI writes, not
+  the moment a reindex was requested. Indexing is incremental: a reindex that
+  finds nothing changed leaves the store untouched, and reporting "just now"
+  for it claimed work that did not happen.
+- Turning auto reindex on, or changing either interval, now takes effect at
+  once. The timers were armed from the settings only at activation, so the
+  feature did nothing until the window was reloaded.
+- Auto reindex is logged: a debug line for every check, an info line per
+  repository it updates, in the same format as a manual reindex. A project
+  falling behind its checkout is logged once, when it happens.
+- Opening an engine log names who asked, like the other user actions.
+- Panel navigation is no longer logged.
+
 ## [0.9.0]
 
 The "outdated" marker introduced in 0.8.0 was wrong. It compared the CLI's
