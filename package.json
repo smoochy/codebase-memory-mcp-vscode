@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -161,12 +161,15 @@
             "Always use an installation you manage yourself. The extension never modifies it."
           ],
           "default": "auto",
-          "description": "Which codebase-memory-mcp binary to use."
+          "description": "Which codebase-memory-mcp binary to use.",
+          "scope": "machine"
         },
         "betterCmm.externalBinaryPath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to your own binary. Leave empty to search the usual locations."
+          "description": "Absolute path to your own binary. Leave empty to search the usual locations.",
+          "scope": "machine",
+          "markdownDescription": "Absolute path to your own binary. Leave empty to search the usual locations. Machine-scoped, so a repository cannot choose which binary this extension runs."
         },
         "betterCmm.autoRefresh": {
           "type": "boolean",

@@ -17,17 +17,44 @@ describe('constants', () => {
   })
 
   describe('uninstallCommandFor', () => {
-    it('binds the command to an absolute path, quoted for spaces', () => {
+    it('quotes the path, which is why a space must stay acceptable', () => {
       assert.equal(
-        uninstallCommandFor('C:/Program Files/cmm.exe'),
-        '"C:/Program Files/cmm.exe" uninstall',
+        uninstallCommandFor('/opt/Program Files/cmm', 'linux'),
+        '"/opt/Program Files/cmm" uninstall',
       )
     })
 
-    // Only reachable when no binary resolved at all; the bare name is the best
-    // guess left, and it is what the user would type themselves.
-    it('falls back to the bare command with no path', () => {
-      assert.equal(uninstallCommandFor(null), UNINSTALL_COMMAND)
+    it('keeps backslashes, since every Windows path has them', () => {
+      assert.equal(
+        uninstallCommandFor('C:\\Users\\me\\cmm.exe', 'win32'),
+        '& "C:\\Users\\me\\cmm.exe" uninstall',
+      )
+    })
+
+    // A quoted string in command position is a parse error in PowerShell,
+    // which is the default terminal on Windows.
+    it('prefixes the call operator on Windows only', () => {
+      assert.ok(uninstallCommandFor('C:/a/cmm.exe', 'win32').startsWith('& "'))
+      assert.ok(uninstallCommandFor('/usr/bin/cmm', 'darwin').startsWith('"'))
+    })
+
+    // The string is handed to the user to paste into a shell, so a path that
+    // could close the quote must never reach the clipboard.
+    for (const [label, hostile] of [
+      ['a double quote', '/tmp/a"; id; "b'],
+      ['a command substitution', '/tmp/$(id)'],
+      ['a backtick', '/tmp/`id`'],
+      ['a newline', '/tmp/a\nid'],
+      ['a carriage return', '/tmp/a\rid'],
+    ] as const) {
+      it(`refuses ${label} and falls back to the bare command`, () => {
+        assert.equal(uninstallCommandFor(hostile, 'linux'), UNINSTALL_COMMAND)
+        assert.equal(uninstallCommandFor(hostile, 'win32'), UNINSTALL_COMMAND)
+      })
+    }
+
+    it('falls back when no binary resolved at all', () => {
+      assert.equal(uninstallCommandFor(null, 'linux'), UNINSTALL_COMMAND)
     })
   })
 })
