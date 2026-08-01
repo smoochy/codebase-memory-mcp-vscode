@@ -125,4 +125,42 @@ describe('downloadVerified', () => {
       /no checksum/i,
     )
   })
+
+  it('reports progress against the declared length while the body arrives', async () => {
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder()
+        controller.enqueue(encoder.encode('a'))
+        controller.enqueue(encoder.encode('bc'))
+        controller.close()
+      },
+    })
+    const seen: number[] = []
+    const bytes = await downloadVerified(
+      A,
+      'asset.tar.gz',
+      CHECKSUMS,
+      stubFetch({
+        [A]: new Response(chunked, { status: 200, headers: { 'content-length': '3' } }),
+      }),
+      (fraction) => seen.push(fraction),
+    )
+    // Still the verified bytes, and the digest was taken over the reassembled
+    // stream rather than over one chunk.
+    assert.equal(new TextDecoder().decode(bytes), 'abc')
+    assert.deepEqual(seen, [1 / 3, 1])
+  })
+
+  it('downloads without progress when the response declares no length', async () => {
+    const seen: number[] = []
+    const bytes = await downloadVerified(
+      A,
+      'asset.tar.gz',
+      CHECKSUMS,
+      stubFetch({ [A]: ok('abc') }),
+      (fraction) => seen.push(fraction),
+    )
+    assert.equal(new TextDecoder().decode(bytes), 'abc')
+    assert.deepEqual(seen, [])
+  })
 })

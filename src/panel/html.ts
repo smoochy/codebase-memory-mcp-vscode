@@ -14,6 +14,13 @@ export interface PanelModel {
   /** Version string when a newer release exists, otherwise null. */
   updateAvailable: string | null
   /**
+   * How far a running update has come, 0 to 100, or null when none is running.
+   *
+   * Rendered into the markup rather than only pushed to the page, so the
+   * refresh timer redrawing mid-download does not throw the bar back to empty.
+   */
+  updateProgress?: number | null
+  /**
    * True between activation and the first completed CLI call. The binary takes
    * seconds to start, so the panel renders a skeleton in the meantime rather
    * than staying blank and reading as a hang.
@@ -126,6 +133,26 @@ function button(command: string, label: string, iconName: string, tone: Tone = '
   )
 }
 
+/**
+ * The update button, which doubles as the progress bar for the update it starts.
+ *
+ * Both faces ship in the markup and the `progress` class picks between them, so
+ * the page can switch on click without building DOM, and a redraw arriving
+ * mid-download keeps whatever the extension last reported.
+ */
+function updateButton(version: string, percent: number | null): string {
+  const running = percent !== null
+  const shown = Math.max(0, Math.min(100, Math.round(percent ?? 0)))
+  return (
+    `<button class="action warning update${running ? ' progress' : ''}" ` +
+    'data-command="betterCmm.updateBinary">' +
+    `<span class="fill" style="width:${String(shown)}%"></span>` +
+    `<span class="label">${icon('arrowUp')}<span>${escapeHtml(`Update to ${version}`)}</span></span>` +
+    `<span class="pct">${String(shown)}%</span>` +
+    '</button>'
+  )
+}
+
 /** A link that reads as a button. Same shape as `button`, opens externally. */
 function linkButton(href: string, label: string, iconName: string, tone: Tone = 'neutral'): string {
   return (
@@ -148,8 +175,11 @@ function metrics(projects: ProjectSummary[]): string {
     { value: formatCount(total(projects, 'nodes')), label: 'Nodes' },
     { value: formatCount(total(projects, 'edges')), label: 'Edges' },
     // Projects, per the spec: it replaces the reference extension's Uptime
-    // tile, which was always empty. Index size stays visible per project.
+    // tile, which was always empty.
     { value: formatCount(projects.length), label: 'Projects' },
+    // What every index costs on disk together. The per-project figure answers
+    // "which one is big", this one answers "how much is all of this".
+    { value: formatBytes(total(projects, 'size_bytes')), label: 'Size' },
   ]
     .map(
       (card) =>
@@ -468,7 +498,33 @@ document.addEventListener('click', (event) => {
   if (!(button instanceof HTMLElement)) return
   const command = button.dataset.command
   if (command === undefined) return
+  if (command === 'betterCmm.updateBinary') {
+    // An update in flight is not restartable, and the button is now a progress
+    // bar, so a second click has nothing to do.
+    if (button.classList.contains('progress')) return
+    setUpdateProgress(0)
+  }
   vscode.postMessage({ command, project: button.dataset.project })
+})
+// The percentage arrives from the extension while the download runs. Painting
+// it here rather than redrawing the panel keeps the bar smooth.
+function setUpdateProgress(percent) {
+  const button = document.querySelector('.action.update')
+  if (button === null) return
+  if (percent === null) {
+    button.classList.remove('progress')
+    return
+  }
+  const shown = Math.max(0, Math.min(100, Math.round(percent)))
+  button.classList.add('progress')
+  button.querySelector('.fill').style.width = shown + '%'
+  button.querySelector('.pct').textContent = shown + '%'
+}
+window.addEventListener('message', (event) => {
+  const message = event.data
+  if (message === null || typeof message !== 'object') return
+  if (message.kind !== 'updateProgress') return
+  setUpdateProgress(message.percent)
 })
 // Settings write on commit rather than on every keystroke: change fires on
 // blur or Enter for a text field, and immediately for a select.
@@ -715,9 +771,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // notes sit beside it so the user can read what changes before taking it.
   const updateActions: string[] = []
   if (actions.showUpdateButton && model.updateAvailable !== null) {
-    updateActions.push(
-      button('betterCmm.updateBinary', `Update to ${model.updateAvailable}`, 'arrowUp', 'warning'),
-    )
+    updateActions.push(updateButton(model.updateAvailable, model.updateProgress ?? null))
     // The version string comes from the CLI, and `releaseNotesUrl` refuses to
     // build a URL out of one that is not a plain tag. Rendering the rest of the
     // panel matters more than the link, so a rejected version drops the link.
@@ -890,7 +944,12 @@ header {
 }
 .tag.ok  { color: var(--ok);  background: rgba(var(--ok-rgb), .16); }
 .tag.err { color: var(--err); background: rgba(var(--err-rgb), .16); min-width: 16px; text-align: center; }
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px; }
+/* Four tiles across when the sidebar is wide enough, two by two when it is
+   not. A fixed four-column grid squeezes "1.7 MB" into an ellipsis. */
+.metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+  gap: 8px; padding: 0 12px;
+}
 .metric {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
   padding: 10px 6px 8px; text-align: center; min-width: 0;
@@ -939,6 +998,19 @@ section h2 {
   border-color: rgba(var(--warn-rgb), .30);
 }
 .action.warning:hover { background: rgba(var(--warn-rgb), .18); }
+/* The update button is its own progress bar: .fill is the bar, .label and .pct
+   are the two faces, and the progress class decides which one shows. */
+.action.update { position: relative; overflow: hidden; }
+.action.update .label { display: flex; align-items: center; gap: 10px; }
+.action.update .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+  background: rgba(var(--warn-rgb), .30); transition: width .2s ease;
+}
+.action.update .label, .action.update .pct { position: relative; }
+.action.update .pct { display: none; font-variant-numeric: tabular-nums; }
+.action.update.progress { cursor: default; justify-content: center; }
+.action.update.progress .label { display: none; }
+.action.update.progress .pct { display: block; }
 .action.danger {
   font-weight: 600; color: var(--err);
   background: rgba(var(--err-rgb), .10);

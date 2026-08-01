@@ -816,14 +816,26 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           return
         }
 
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: wizardStepTitle('download-binary') },
-          async (progress) =>
-            installRelease(
-              latestTag,
-              installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
-            ),
-        )
+        try {
+          // The panel's update button turns into its own progress bar, so the
+          // percentage goes there as well as into the notification.
+          panel.setUpdateProgress(0)
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: wizardStepTitle('download-binary'),
+            },
+            async (progress) =>
+              installRelease(latestTag, {
+                ...installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
+                onProgress: (percent) => {
+                  panel.setUpdateProgress(percent)
+                },
+              }),
+          )
+        } finally {
+          panel.setUpdateProgress(null)
+        }
         log(`update installed ${latestTag} (was ${installed.value})`)
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.

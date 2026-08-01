@@ -49,10 +49,20 @@ export interface InstallDeps {
   log?: (message: string) => void
   /** Reports the wizard step id currently in progress. Callers resolve it to a title. */
   onStep?: (id: WizardStepId) => void
+  /**
+   * How far the install has come, 0 to 100.
+   *
+   * The download is what takes minutes, so it owns most of the scale; the
+   * remainder covers extracting and replacing the binary, which is seconds.
+   */
+  onProgress?: (percent: number) => void
   extractTimeoutMs?: number
 }
 
 const EXTRACT_TIMEOUT_MS = 120_000
+
+/** Share of the progress scale the download owns; the rest is extract plus move. */
+const DOWNLOAD_SHARE = 90
 
 /** Same forward-slash join `locate.ts` uses, so paths compare cleanly. */
 function join(...parts: string[]): string {
@@ -116,7 +126,19 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
   log(`downloading ${url}`)
 
   step('verify-binary')
-  const archiveBytes = await downloadVerified(url, asset, checksums, fetchImpl)
+  const progress = deps.onProgress
+  const archiveBytes = await downloadVerified(
+    url,
+    asset,
+    checksums,
+    fetchImpl,
+    progress === undefined
+      ? undefined
+      : (fraction) => {
+          progress(Math.round(fraction * DOWNLOAD_SHARE))
+        },
+  )
+  progress?.(DOWNLOAD_SHARE)
 
   // Everything below stays inside the extension's own global storage.
   const workDir = join(storageDir, 'download')
@@ -143,6 +165,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
     // No dedicated wizard step for this instant, in-process move; it is still
     // covered by the 'verify-binary' step the user is looking at.
     replaceBinary(target, ops.read(extracted), platform, ops)
+    progress?.(100)
     log(`installed ${tag} at ${target}`)
     return target
   } finally {

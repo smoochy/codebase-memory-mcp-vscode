@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.4]
+
+- The update button becomes the progress bar for the update it starts: the
+  label gives way to a percentage and the button fills as the release
+  downloads. The figure is real - bytes received against the length the
+  response declares - and the download owns 90 of the 100 steps, the rest
+  covering extraction and the replacement of the binary.
+- The header totals gain a fourth tile: what every index costs on disk
+  together. The tiles wrap two by two when the sidebar is too narrow for four.
+
 ## [0.9.3]
 
 - An available engine update now shows as a count on the activity bar icon, so

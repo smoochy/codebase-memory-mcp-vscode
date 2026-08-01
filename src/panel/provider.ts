@@ -17,6 +17,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private lastHtml = ''
   private view_: 'main' | 'settings' = 'main'
   private cliSettings: CliSetting[] = []
+  private updateProgress: number | null = null
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -47,10 +48,36 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     this.render()
   }
 
+  /**
+   * How far a running update has come, 0 to 100, or null when none runs.
+   *
+   * Pushed to the page rather than re-rendered: the panel replaces its whole
+   * document on every render, which would blink once per percent. The value is
+   * also kept here so a refresh landing mid-download renders the bar as it is.
+   */
+  setUpdateProgress(percent: number | null): void {
+    // A chunked download reports thousands of times; the bar has a hundred
+    // steps. Posting only when the number the user sees changes keeps that from
+    // becoming thousands of messages across the webview boundary.
+    if (percent === this.updateProgress) {
+      return
+    }
+    this.updateProgress = percent
+    if (this.model !== undefined) {
+      this.model = { ...this.model, updateProgress: percent }
+    }
+    void this.view?.webview.postMessage({ kind: 'updateProgress', percent })
+  }
+
   update(model: PanelModel): void {
     // The view is panel state, not CLI state, so a refresh landing while the
     // uninstall screen is open must not throw the user back to the main view.
-    this.model = { ...model, view: this.view_, cliSettings: this.cliSettings }
+    this.model = {
+      ...model,
+      view: this.view_,
+      cliSettings: this.cliSettings,
+      updateProgress: this.updateProgress,
+    }
     this.render()
   }
 

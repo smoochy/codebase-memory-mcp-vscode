@@ -49,17 +49,60 @@ export async function resolveLatestTag(fetchImpl: FetchLike): Promise<string> {
   return tag
 }
 
+/**
+ * Read the body chunk by chunk, reporting how much has arrived.
+ *
+ * Falls back to reading it in one piece when the response carries no readable
+ * stream or no length to measure against - progress is a nicety, and a missing
+ * `content-length` must not fail the download.
+ */
+async function readWithProgress(
+  response: Response,
+  onProgress: (fraction: number) => void,
+): Promise<Uint8Array> {
+  const declared = Number(response.headers.get('content-length') ?? '')
+  const body = response.body
+  if (body === null || !Number.isFinite(declared) || declared <= 0) {
+    return new Uint8Array(await response.arrayBuffer())
+  }
+
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    chunks.push(value)
+    received += value.length
+    onProgress(Math.min(1, received / declared))
+  }
+
+  const bytes = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.length
+  }
+  return bytes
+}
+
 /** Download and verify. Bytes are returned only when the digest matches. */
 export async function downloadVerified(
   url: string,
   asset: string,
   checksums: string,
   fetchImpl: FetchLike,
+  onProgress?: (fraction: number) => void,
 ): Promise<Uint8Array> {
   // Look up the expected digest first, so a missing entry fails before the download.
   const expected = expectedChecksum(checksums, asset)
   const response = await followRedirects(url, fetchImpl)
-  const bytes = new Uint8Array(await response.arrayBuffer())
+  const bytes =
+    onProgress === undefined
+      ? new Uint8Array(await response.arrayBuffer())
+      : await readWithProgress(response, onProgress)
   const actual = sha256(bytes)
 
   if (actual !== expected) {

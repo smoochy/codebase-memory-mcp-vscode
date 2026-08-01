@@ -197,7 +197,12 @@ describe('renderBody', () => {
       externalPath: '/usr/bin/cmm',
       registration: { kind: 'present', path: '/usr/bin/cmm' },
     })
-    assert.doesNotMatch(renderBody(model({ state: external }), 'n1'), /betterCmm.updateBinary/)
+    // The command name also appears in the click handler script, which ships
+    // unconditionally, so the assertion is on the button rather than the string.
+    assert.doesNotMatch(
+      renderBody(model({ state: external }), 'n1'),
+      /data-command="betterCmm.updateBinary"/,
+    )
   })
 
   it('announces an available update', () => {
@@ -206,8 +211,26 @@ describe('renderBody', () => {
 
   it('colours the update button as a warning and links the release notes', () => {
     const html = renderBody(model({ updateAvailable: '0.9.1' }), 'n1')
-    assert.match(html, /class="action warning" data-command="betterCmm.updateBinary"/)
+    assert.match(html, /class="action warning update" data-command="betterCmm.updateBinary"/)
     assert.match(html, /href="https:\/\/github.com\/[^"]+\/releases\/tag\/v0\.9\.1"/)
+  })
+
+  it('leaves the update button idle when no update is running', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1' }), 'n1')
+    assert.doesNotMatch(html, /class="action warning update progress"/)
+    assert.match(html, /<span class="fill" style="width:0%">/)
+  })
+
+  it('renders a running update as a filled bar with its percentage', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1', updateProgress: 42.4 }), 'n1')
+    assert.match(html, /class="action warning update progress"/)
+    assert.match(html, /<span class="fill" style="width:42%">/)
+    assert.match(html, /<span class="pct">42%<\/span>/)
+  })
+
+  it('clamps a percentage the install path should never report', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1', updateProgress: 130 }), 'n1')
+    assert.match(html, /<span class="fill" style="width:100%">/)
   })
 
   it('drops the release notes link for a version that is not a plain tag', () => {
