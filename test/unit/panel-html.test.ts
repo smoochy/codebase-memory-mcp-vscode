@@ -109,6 +109,13 @@ describe('relativeTime', () => {
     assert.equal(relativeTime(at(183 * 60), now), '183h ago')
   })
 
+  // Hours carry their minutes: "5h 24m ago" is far more precise about staleness
+  // than "5h ago", and the extra token costs nothing at this size.
+  it('includes the minutes past the hour', () => {
+    assert.equal(relativeTime(at(5 * 60 + 24), now), '5h 24m ago')
+    assert.equal(relativeTime(at(61), now), '1h 1m ago')
+  })
+
   it('says just now under a minute, and never counts backwards', () => {
     assert.equal(relativeTime(now, now), 'just now')
     assert.equal(relativeTime(now + 60_000, now), 'just now')
@@ -400,9 +407,42 @@ describe('renderBody', () => {
         'n1',
       )
       // Whichever form is shown, the other one is the tooltip.
-      assert.match(relative, /h ago<\/span>/)
+      assert.match(relative, /ago<\/span>/)
       assert.match(relative, /title="Index last updated: [0-9]/)
-      assert.match(absolute, /title="Index last updated: [0-9]+h ago"/)
+      assert.match(absolute, /title="Index last updated: [0-9]+h( [0-9]+m)? ago"/)
+    })
+
+    // base_sha is the commit the index was built from, head_sha the one the
+    // checkout is on. A difference is the exact statement "this index does not
+    // describe what is on disk", and both already arrive with the project list.
+    it('marks an index built from an earlier commit as outdated', () => {
+      const html = renderBody(
+        model({
+          projects: [
+            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'bbbb2222' } },
+          ],
+        }),
+        'n1',
+      )
+      assert.match(html, /outdated/)
+      assert.match(html, /built from an earlier commit/)
+    })
+
+    it('says nothing when the index matches the checkout', () => {
+      const html = renderBody(
+        model({
+          projects: [
+            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'aaaa1111' } },
+          ],
+        }),
+        'n1',
+      )
+      assert.doesNotMatch(html, /outdated/)
+    })
+
+    it('says nothing for a checkout that is not a git repository', () => {
+      const html = renderBody(model({ projects: [{ name: 'a', root_path: '/a' }] }), 'n1')
+      assert.doesNotMatch(html, /outdated/)
     })
 
     it('says nothing about freshness when the CLI reported nothing', () => {

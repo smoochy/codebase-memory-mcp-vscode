@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -223,11 +223,17 @@
           "description": "Show index times as a date and time rather than an age. Hovering shows the other form either way.",
           "order": 5
         },
+        "betterCmm.dateLocale": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Locale for absolute times, for example `de-DE` or `en-US`. Leave empty to follow the editor. The extension host follows VS Code's display language rather than the operating system's regional format, so an English VS Code on a German machine formats dates as en-US unless this is set.",
+          "order": 6
+        },
         "betterCmm.checkForUpdates": {
           "type": "boolean",
           "default": true,
           "description": "Check GitHub for a newer release of the managed binary on startup.",
-          "order": 6
+          "order": 7
         },
         "betterCmm.logLevel": {
           "type": "string",
@@ -239,7 +245,7 @@
           ],
           "default": "info",
           "description": "Lowest severity written to the extension log. Debug records every action.",
-          "order": 7
+          "order": 8
         },
         "betterCmm.logMaxSizeMb": {
           "type": "number",
@@ -247,7 +253,7 @@
           "minimum": 1,
           "maximum": 100,
           "description": "Size in megabytes a log file may reach before it is rotated.",
-          "order": 8
+          "order": 9
         },
         "betterCmm.logKeptFiles": {
           "type": "number",
@@ -255,7 +261,7 @@
           "minimum": 1,
           "maximum": 20,
           "description": "How many rotated log files to keep besides the current one.",
-          "order": 9
+          "order": 10
         }
       }
     }

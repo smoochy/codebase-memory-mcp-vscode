@@ -47,22 +47,42 @@ function numberSetting(key: string, fallback: number, low: number, high: number)
  * incremental, so an unchanged repository returns in well under a second with
  * the same numbers and without touching its store file.
  */
-function indexReport(payload: unknown): string {
+function indexReport(payload: unknown, before?: { nodes?: number; edges?: number }): string {
   if (typeof payload !== 'object' || payload === null) {
     return 'done'
   }
   const record = payload as { nodes?: unknown; edges?: unknown; skipped_count?: unknown }
-  const parts: string[] = []
-  if (typeof record.nodes === 'number') {
-    parts.push(`${record.nodes.toLocaleString('en-US')} nodes`)
+
+  /** "7,301 nodes (+12)", or just the count when there is nothing to compare. */
+  const withDelta = (value: unknown, was: number | undefined, label: string): string | null => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return null
+    }
+    const shown = `${value.toLocaleString('en-US')} ${label}`
+    if (was === undefined || was === value) {
+      return shown
+    }
+    const delta = value - was
+    return `${shown} (${delta > 0 ? '+' : ''}${delta.toLocaleString('en-US')})`
   }
-  if (typeof record.edges === 'number') {
-    parts.push(`${record.edges.toLocaleString('en-US')} edges`)
-  }
+
+  const parts = [
+    withDelta(record.nodes, before?.nodes, 'nodes'),
+    withDelta(record.edges, before?.edges, 'edges'),
+  ].filter((part): part is string => part !== null)
+
   if (typeof record.skipped_count === 'number' && record.skipped_count > 0) {
     parts.push(`${record.skipped_count.toLocaleString('en-US')} skipped`)
   }
-  return parts.length === 0 ? 'done' : parts.join(', ')
+  if (parts.length === 0) {
+    return 'done'
+  }
+  // Saying so outright beats leaving the reader to compare two numbers: an
+  // unchanged repository is the common case, and it is what "nothing seemed to
+  // happen" actually looked like.
+  const unchanged =
+    before !== undefined && record.nodes === before.nodes && record.edges === before.edges
+  return unchanged ? `${parts.join(', ')} - unchanged` : parts.join(', ')
 }
 
 /**
@@ -223,6 +243,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'autoRefresh',
     'refreshIntervalSeconds',
     'absoluteTimestamps',
+    'dateLocale',
     'checkForUpdates',
     'logLevel',
     'logMaxSizeMb',
@@ -372,6 +393,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       gitBashAvailable: gitBashAvailable(),
       managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
       absoluteTime: setting('absoluteTimestamps', false),
+      dateLocale: setting('dateLocale', ''),
     })
   }
 
@@ -882,7 +904,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // a second and the store file is not touched, so "finished" on its own
         // was indistinguishable from nothing having happened. Report what the
         // CLI actually said.
-        const report = indexReport(result.value)
+        const report = indexReport(result.value, { nodes: project.nodes, edges: project.edges })
         log(`reindex of "${project.name}" finished: ${report}`)
         void vscode.window.showInformationMessage(`${project.name}: ${report}`)
       } else {

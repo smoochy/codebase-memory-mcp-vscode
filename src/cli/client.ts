@@ -23,7 +23,13 @@ export interface ProjectSummary {
   edges?: number
   size_bytes?: number
   /** Present for git checkouts; `branch` is null on a detached or non-git root. */
-  git?: { branch?: string | null }
+  git?: {
+    branch?: string | null
+    /** Commit the index was built from. */
+    base_sha?: string | null
+    /** Commit the working tree is on now. Differs from base_sha when stale. */
+    head_sha?: string | null
+  }
   /**
    * Filled in by the extension, not the CLI: mtime of the per-project store
    * file, which is the only record of when the index was last built.

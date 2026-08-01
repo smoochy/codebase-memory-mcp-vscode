@@ -33,6 +33,8 @@ export interface PanelModel {
   managedBinaryPresent?: boolean
   /** Show index times as a date rather than an age. The other form is the tooltip. */
   absoluteTime?: boolean
+  /** Locale for absolute times; empty means let the host decide. */
+  dateLocale?: string
 }
 
 /**
@@ -236,7 +238,12 @@ function binaryBar(model: PanelModel): string {
   return '<div class="bar"><span class="tag err">!</span>No binary found - run setup to get started</div>'
 }
 
-function projectCards(projects: ProjectSummary[], loading: boolean, absoluteTime: boolean): string {
+function projectCards(
+  projects: ProjectSummary[],
+  loading: boolean,
+  absoluteTime: boolean,
+  locale: string | undefined,
+): string {
   if (loading) {
     // Three placeholder bars, so the panel has its final shape before the CLI
     // answers rather than appearing empty and broken.
@@ -285,7 +292,7 @@ function projectCards(projects: ProjectSummary[], loading: boolean, absoluteTime
           ? ''
           : '<span class="sep">·</span>' +
             `<span>${escapeHtml(formatBytes(project.size_bytes))}</span>`) +
-        indexedAt(project, absoluteTime) +
+        indexedAt(project, absoluteTime, locale) +
         (typeof project.git?.branch === 'string' && project.git.branch.length > 0
           ? '<span class="sep">·</span>' + branchTag(project.git.branch)
           : '') +
@@ -319,7 +326,15 @@ export function relativeTime(thenMs: number, nowMs: number): string {
     return 'just now'
   }
   const minutes = Math.floor(seconds / 60)
-  return minutes < 60 ? `${String(minutes)}m ago` : `${String(Math.floor(minutes / 60))}h ago`
+  if (minutes < 60) {
+    return `${String(minutes)}m ago`
+  }
+  // Hours carry their minutes: "5h 24m ago" says how stale far more precisely
+  // than "5h ago", and at this granularity the extra token costs nothing. The
+  // minutes are dropped when they are zero rather than printing "5h 0m".
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${String(hours)}h ago` : `${String(hours)}h ${String(rest)}m ago`
 }
 
 /**
@@ -329,8 +344,12 @@ export function relativeTime(thenMs: number, nowMs: number): string {
  * sees 01.08.2026, 16:40 and an American one 8/1/2026, 4:40 PM, without the
  * extension deciding which is correct.
  */
-export function absoluteTimeLabel(atMs: number): string {
-  return new Date(atMs).toLocaleString(undefined, {
+export function absoluteTimeLabel(atMs: number, locale?: string): string {
+  // The extension host resolves its own locale, which follows VS Code's display
+  // language rather than the operating system's regional format - an English
+  // VS Code on a German machine formats as en-US. The caller passes what the
+  // user actually wants; undefined falls back to the host's guess.
+  return new Date(atMs).toLocaleString(locale === undefined || locale === '' ? undefined : locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -340,24 +359,49 @@ export function absoluteTimeLabel(atMs: number): string {
 }
 
 /**
+ * Whether the index is behind the checkout.
+ *
+ * `base_sha` is the commit the index was built from and `head_sha` the one the
+ * working tree is on, so a difference is the exact statement "this index does
+ * not describe what is on disk". Both already arrive with the project list, so
+ * this costs nothing - unlike `detect_changes`, which is a process launch each
+ * and measures the working tree against HEAD rather than against the index.
+ */
+function staleCommit(project: ProjectSummary): boolean {
+  const base = project.git?.base_sha
+  const head = project.git?.head_sha
+  return typeof head === 'string' && head.length > 0 && base !== head
+}
+
+/**
  * When the index was last built, beside the size it belongs to.
  *
  * The store icon repeats the one on the reindex button on purpose: both name
  * the same thing, the stored index. Whichever of the two time formats is not
  * shown becomes the tooltip, so the other reading is always one hover away.
  */
-function indexedAt(project: ProjectSummary, absolute: boolean): string {
+function indexedAt(project: ProjectSummary, absolute: boolean, locale: string | undefined): string {
   const at = project.indexed_at_ms
+  const stale = staleCommit(project)
   if (typeof at !== 'number' || !Number.isFinite(at)) {
-    return ''
+    return stale ? '<span class="sep">·</span>' + staleTag() : ''
   }
   const relative = relativeTime(at, Date.now())
-  const exact = absoluteTimeLabel(at)
+  const exact = absoluteTimeLabel(at, locale)
   const [shown, hidden] = absolute ? [exact, relative] : [relative, exact]
   return (
     '<span class="sep">·</span>' +
     `<span class="indexed" title="${escapeHtml(`Index last updated: ${hidden}`)}">` +
-    `${icon('reindex')}${escapeHtml(shown)}</span>`
+    `${icon('reindex')}${escapeHtml(shown)}</span>` +
+    (stale ? '<span class="sep">·</span>' + staleTag() : '')
+  )
+}
+
+/** Says the index predates the current commit, and what to do about it. */
+function staleTag(): string {
+  return (
+    '<span class="stale" title="The index was built from an earlier commit than the one ' +
+    'checked out. Reindex this repository to bring it up to date.">outdated</span>'
   )
 }
 
@@ -678,7 +722,10 @@ export function renderBody(model: PanelModel, nonce: string): string {
     ),
   )
   parts.push(
-    section('Projects', projectCards(model.projects, loading, model.absoluteTime === true)),
+    section(
+      'Projects',
+      projectCards(model.projects, loading, model.absoluteTime === true, model.dateLocale),
+    ),
   )
 
   return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -919,6 +966,10 @@ section h2 {
 .card-age .stale { color: var(--warn); cursor: help; }
 .card-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; flex-wrap: nowrap; }
 /* The branch reads as a label rather than another number. */
+.stale {
+  padding: 0 5px; border-radius: 999px; cursor: help; font-weight: 600;
+  color: var(--warn); background: rgba(var(--warn-rgb), .13);
+}
 .card-stats .branch {
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--accent);
