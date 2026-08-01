@@ -73,6 +73,15 @@ export function upstreamRepoUrl(): string {
   return `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}`
 }
 
+/** `releaseNotesUrl` for callers that render a version they cannot vouch for. */
+export function releaseNotesUrlOrNull(version: string): string | null {
+  try {
+    return releaseNotesUrl(version)
+  } catch {
+    return null
+  }
+}
+
 export function releaseNotesUrl(version: string): string {
   const tag = version.startsWith('v') ? version : `v${version}`
   assertPlainAssetName(tag)

@@ -204,6 +204,18 @@ describe('renderBody', () => {
     assert.match(renderBody(model({ updateAvailable: '0.9.1' }), 'n1'), /0\.9\.1/)
   })
 
+  it('colours the update button as a warning and links the release notes', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1' }), 'n1')
+    assert.match(html, /class="action warning" data-command="betterCmm.updateBinary"/)
+    assert.match(html, /href="https:\/\/github.com\/[^"]+\/releases\/tag\/v0\.9\.1"/)
+  })
+
+  it('drops the release notes link for a version that is not a plain tag', () => {
+    const html = renderBody(model({ updateAvailable: '0.9.1 <script>' }), 'n1')
+    assert.match(html, /betterCmm.updateBinary/)
+    assert.doesNotMatch(html, /releases\/tag\//)
+  })
+
   it('renders the project rows', () => {
     const html = renderBody(
       model({ projects: [{ name: 'app', root_path: 'D:/Repos/app', nodes: 12, edges: 34 }] }),

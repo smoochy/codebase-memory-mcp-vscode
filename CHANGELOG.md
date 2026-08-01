@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.3]
+
+- An available engine update now shows as a count on the activity bar icon, so
+  it is visible without opening the panel.
+- The update button carries the warning colour rather than the same green as
+  every other action, and a link to the release notes sits beside it: an update
+  is worth reading about before taking it.
+- The sidebar icon is the mark the panel header already uses.
+- Installing a binary logs its URL and target path as debug detail. What the
+  user asked for and what came of it is still logged at info.
+
 ## [0.9.2]
 
 - Adding repositories now logs what was indexed - the repository and its node

@@ -1,4 +1,4 @@
-import { upstreamRepoUrl } from '../binary/assets'
+import { releaseNotesUrlOrNull, upstreamRepoUrl } from '../binary/assets'
 import { uninstallCommandFor, uninstallCommandForBash } from '../constants'
 import type { ProjectSummary } from '../cli/client'
 import { optionsFromDescription, type CliSetting } from '../cli/configParse'
@@ -90,7 +90,7 @@ function total(projects: ProjectSummary[], field: 'nodes' | 'edges' | 'size_byte
   return projects.reduce((sum, project) => sum + (project[field] ?? 0), 0)
 }
 
-type Tone = 'neutral' | 'primary' | 'danger'
+type Tone = 'neutral' | 'primary' | 'warning' | 'danger'
 
 /** Inline icons. Drawn on a 16-unit grid so every path shares one scale. */
 const ICONS: Record<string, string> = {
@@ -123,6 +123,15 @@ function button(command: string, label: string, iconName: string, tone: Tone = '
     `<button class="action ${tone}" data-command="${escapeHtml(command)}">` +
     `${icon(iconName)}<span>${escapeHtml(label)}</span>` +
     '</button>'
+  )
+}
+
+/** A link that reads as a button. Same shape as `button`, opens externally. */
+function linkButton(href: string, label: string, iconName: string, tone: Tone = 'neutral'): string {
+  return (
+    `<a class="action ${tone}" href="${escapeHtml(href)}">` +
+    `${icon(iconName)}<span>${escapeHtml(label)}</span>` +
+    '</a>'
   )
 }
 
@@ -700,10 +709,22 @@ export function renderBody(model: PanelModel, nonce: string): string {
     )
     buttons.push(button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'))
   }
+  // The update pair carries the warning colour, not the call-to-action green:
+  // running an outdated engine is the problem being reported, and a button in
+  // the same colour as every other action is one nobody notices. The release
+  // notes sit beside it so the user can read what changes before taking it.
+  const updateActions: string[] = []
   if (actions.showUpdateButton && model.updateAvailable !== null) {
-    buttons.push(
-      button('betterCmm.updateBinary', `Update to ${model.updateAvailable}`, 'arrowUp', 'primary'),
+    updateActions.push(
+      button('betterCmm.updateBinary', `Update to ${model.updateAvailable}`, 'arrowUp', 'warning'),
     )
+    // The version string comes from the CLI, and `releaseNotesUrl` refuses to
+    // build a URL out of one that is not a plain tag. Rendering the rest of the
+    // panel matters more than the link, so a rejected version drops the link.
+    const notes = releaseNotesUrlOrNull(model.updateAvailable)
+    if (notes !== null) {
+      updateActions.push(linkButton(notes, 'Release notes', 'link', 'primary'))
+    }
   }
   // Anything above this point is a one-off call to action - registering,
   // updating - and keeps a full-width row of its own. Below it the actions are
@@ -726,6 +747,9 @@ export function renderBody(model: PanelModel, nonce: string): string {
     section(
       'Actions',
       (buttons.length === 0 ? '' : `<div class="actions">${buttons.join('')}</div>`) +
+        (updateActions.length === 0
+          ? ''
+          : `<div class="actions grid">${updateActions.join('')}</div>`) +
         `<div class="actions grid">${projectActions.join('')}</div>` +
         `<div class="actions grid">${logActions.join('')}</div>`,
     ),
@@ -909,13 +933,21 @@ section h2 {
   border-color: rgba(var(--ok-rgb), .30);
 }
 .action.primary:hover { background: rgba(var(--ok-rgb), .18); }
+.action.warning {
+  font-weight: 600; color: var(--warn);
+  background: rgba(var(--warn-rgb), .10);
+  border-color: rgba(var(--warn-rgb), .30);
+}
+.action.warning:hover { background: rgba(var(--warn-rgb), .18); }
 .action.danger {
   font-weight: 600; color: var(--err);
   background: rgba(var(--err-rgb), .10);
   border-color: rgba(var(--err-rgb), .28);
 }
+/* An <a> styled as a button: strip the link defaults the button never had. */
+a.action { text-decoration: none; }
 .icon { width: 15px; height: 15px; flex-shrink: 0; opacity: .75; pointer-events: none; }
-.action:hover .icon, .action.primary .icon, .action.danger .icon { opacity: 1; }
+.action:hover .icon, .action.primary .icon, .action.warning .icon, .action.danger .icon { opacity: 1; }
 .card {
   margin: 4px 10px; padding: 11px 13px;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);

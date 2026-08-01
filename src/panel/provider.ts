@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import type { CliSetting } from '../cli/configParse'
+import { allowedActions } from '../state/machine'
 import { contentSecurityPolicy, renderBody, PANEL_CSS, type PanelModel } from './html'
 
 function makeNonce(): string {
@@ -138,5 +139,20 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       `<style nonce="${nonce}">${PANEL_CSS}</style>` +
       `</head><body>${renderBody(model, nonce)}</body></html>`
     this.view.webview.html = this.lastHtml
+    this.view.badge = this.badgeFor(model)
+  }
+
+  /**
+   * The count on the activity bar icon.
+   *
+   * Only what the user has to act on, which today is one thing: an engine
+   * update waiting to be installed. Without it the panel has to be opened to
+   * learn there is anything to do at all.
+   */
+  private badgeFor(model: PanelModel): vscode.ViewBadge | undefined {
+    if (!allowedActions(model.state).showUpdateButton || model.updateAvailable === null) {
+      return undefined
+    }
+    return { value: 1, tooltip: `Codebase Memory ${model.updateAvailable} is available` }
   }
 }
