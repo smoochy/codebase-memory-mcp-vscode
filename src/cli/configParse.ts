@@ -1,3 +1,14 @@
+/**
+ * Shape a config key must have to be accepted.
+ *
+ * Both parsers read the key as non-whitespace, so `--config-file` would pass
+ * and later become the first positional of `config set`. The allowlist built
+ * from these keys is meant to stop a webview message choosing an arbitrary
+ * argument; requiring a plain identifier is what makes it hold regardless of
+ * what the CLI printed.
+ */
+const KEY_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+
 export interface CliSetting {
   key: string
   value: string
@@ -30,7 +41,7 @@ export function parseConfigKeys(stdout: string): Map<string, KeyInfo> {
       continue
     }
     const [, key, defaultValue, description] = match
-    if (key === undefined) {
+    if (key === undefined || !KEY_SHAPE.test(key)) {
       continue
     }
     result.set(key, {
@@ -50,7 +61,7 @@ export function parseConfigList(stdout: string): Map<string, string> {
       continue
     }
     const [, key, value] = match
-    if (key === undefined) {
+    if (key === undefined || !KEY_SHAPE.test(key)) {
       continue
     }
     result.set(key, value ?? '')

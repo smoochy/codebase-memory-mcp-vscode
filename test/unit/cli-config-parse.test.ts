@@ -51,6 +51,27 @@ describe('parseConfigKeys', () => {
   })
 })
 
+describe('config key shape', () => {
+  // The keys become the allowlist for writes, and a write passes the key as
+  // the first positional of `config set`. A key shaped like a flag would make
+  // that allowlist meaningless.
+  for (const hostile of ['--config-file', '-o', '--']) {
+    it(`drops a flag-shaped key from config list: ${hostile}`, () => {
+      assert.equal(parseConfigList(`  ${hostile} = 1\n`).size, 0)
+    })
+
+    it(`drops a flag-shaped key from the key list: ${hostile}`, () => {
+      const stdout = `Config keys:\n  ${hostile}   default=x   Some description\n`
+      assert.equal(parseConfigKeys(stdout).size, 0)
+    })
+  }
+
+  it('keeps the ordinary keys the CLI really uses', () => {
+    const parsed = parseConfigList('  auto_index = false\n  ui-lang = auto\n')
+    assert.deepEqual([...parsed.keys()], ['auto_index', 'ui-lang'])
+  })
+})
+
 describe('parseConfigList', () => {
   it('reads key and value, trimming padding', () => {
     const values = parseConfigList(LIST_OUTPUT)

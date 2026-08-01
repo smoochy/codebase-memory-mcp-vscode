@@ -389,6 +389,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       // The folder, not the binary: this is for pasting into a terminal or a
       // PATH entry, where the executable name is in the way.
       const folder = dirname(active)
+      // A bare path is not automatically safe to paste: a line break in it
+      // submits the trailing segment as its own command. Same rule as the
+      // uninstall command, for the same reason.
+      if (/[\r\n]/.test(folder)) {
+        log(`refused to copy a path containing a line break: ${folder}`)
+        return
+      }
       await vscode.env.clipboard.writeText(folder)
       void vscode.window.showInformationMessage(`Copied ${folder}`)
     },
@@ -595,7 +602,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   if (setting('autoRefresh', true)) {
     const seconds = Math.max(5, setting('refreshIntervalSeconds', 30))
     refreshTimer = setInterval(() => {
-      if (panel.isVisible) {
+      if (panel.isVisible && !panel.isOnSubScreen) {
         void refresh()
       }
     }, seconds * 1000)

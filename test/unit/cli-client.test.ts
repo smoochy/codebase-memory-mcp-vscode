@@ -139,6 +139,23 @@ describe('CliClient', () => {
     assert.deepEqual(calls[0]?.args, ['cli', 'index_repository', '--repo-path=--exclude=x', '--json'])
   })
 
+  // The value of a setting is not validated anywhere — it comes straight from
+  // a webview field. It stays harmless because it is its own argv element and
+  // spawn runs without a shell, which is exactly what this pins.
+  it('passes a setting value as one argv element, whatever is in it', async () => {
+    const calls: Array<{ command: string; args: string[] }> = []
+    const hostile = '"; rm -rf ~ #'
+    await new CliClient(BIN, stubRunner({ stdout: '' }, calls)).setConfig('auto_watch', hostile)
+    assert.deepEqual(calls[0]?.args, ['config', 'set', 'auto_watch', hostile])
+  })
+
+  it('reports a non-zero exit from a config write rather than silently passing', async () => {
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr: 'unknown key', code: 1 }))
+    const result = await client.setConfig('nope', 'x')
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /unknown key/)
+  })
+
   it('prefers the structured CLI error over stderr when both are present', async () => {
     const stdout = '{"error":"project required","hint":"pass --project"}'
     const client = new CliClient(BIN, stubRunner({ stdout, stderr: 'boom', code: 1 }))

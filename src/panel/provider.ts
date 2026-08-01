@@ -83,6 +83,18 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * True while a full-screen view is open.
+   *
+   * A render replaces the whole document, so a timed refresh landing while the
+   * user is typing in a settings field discards what they had typed. Polling
+   * pauses until they leave the screen; nothing on these screens changes on a
+   * timer anyway.
+   */
+  get isOnSubScreen(): boolean {
+    return this.view_ !== 'main'
+  }
+
+  /**
    * The markup last handed to VS Code.
    *
    * Exposed so an integration test can assert on what the running extension
