@@ -13,7 +13,7 @@ import { redactSecrets, truncateForLog } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
-import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
+import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
@@ -25,11 +25,24 @@ function setting<T>(key: string, fallback: T): T {
   return vscode.workspace.getConfiguration('betterCmm').get<T>(key) ?? fallback
 }
 
-function resolveState(storageDir: string): ExtensionState {
+/**
+ * Key under which the extension records that it installed the binary itself.
+ *
+ * Ownership cannot be inferred from the location: the CLI's own installer
+ * targets the same directory, so a user who installed it themselves would
+ * otherwise have their binary treated as the extension's - offered for update,
+ * overwritten, and offered for deletion, against the rule that the extension
+ * never modifies an installation it does not own.
+ */
+const OWNED_INSTALL_KEY = 'betterCmm.managedInstallPath'
+
+function resolveState(storageDir: string, ownedInstallPath: string | null): ExtensionState {
   const source = setting<BinarySource>('binarySource', 'auto')
   const configured = setting<string>('externalBinaryPath', '').trim()
 
-  const managed = managedBinaryPath(homedir(), process.platform)
+  const candidate = managedBinaryPath(homedir(), process.platform)
+  // Only a binary this extension recorded installing counts as managed.
+  const managed = ownedInstallPath !== null && samePath(ownedInstallPath, candidate) ? candidate : ''
   const external =
     configured.length > 0 && existsSync(configured)
       ? configured
@@ -44,13 +57,15 @@ function resolveState(storageDir: string): ExtensionState {
             // place the external search looks. Without this the extension
             // finds its own install, calls it the user's, and then refuses to
             // update or re-register it.
-            .filter((candidate) => candidate !== managed),
+            // samePath, not string equality: a PATH entry can spell the same
+            // directory with different case or separators on Windows.
+            .filter((entry) => managed === '' || !samePath(entry, managed)),
           existsSync,
         )
 
   return computeState({
     source,
-    managedPath: existsSync(managed) ? managed : null,
+    managedPath: managed !== '' && existsSync(managed) ? managed : null,
     externalPath: external,
     registration: firstRegistration(
       mcpConfigCandidates({
@@ -96,6 +111,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * successful setup looks broken.
    */
   let restartRequired = false
+
+  /** Path this extension recorded installing, or null when it installed nothing. */
+  const ownedInstallPath = (): string | null =>
+    context.globalState.get<string>(OWNED_INSTALL_KEY) ?? null
 
   const panel = new PanelProvider(context.extensionUri, (command, project, value) => {
     // The webview is attacker-influenced content (project names come out of
@@ -164,7 +183,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * rather than decoded.
    */
   const refreshCliSettings = async (): Promise<void> => {
-    const state = resolveState(storageDir)
+    const state = resolveState(storageDir, ownedInstallPath())
     if (state.activePath === null) {
       cliSettings = []
       panel.updateCliSettings(cliSettings)
@@ -182,7 +201,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   const refresh = async (): Promise<void> => {
-    const state = resolveState(storageDir)
+    const state = resolveState(storageDir, ownedInstallPath())
     let version: string | null = null
     let updateAvailable: string | null = null
 
@@ -228,7 +247,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * would still report no binary.
    */
   const registerMcp = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const state = resolveState(storageDir)
+    const state = resolveState(storageDir, ownedInstallPath())
     if (state.activePath === null) {
       return { ok: false, error: 'no binary to register' }
     }
@@ -303,7 +322,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     (arg?: string, value?: string) => void | Promise<void>
   > = {
     'betterCmm.runSetup': async () => {
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (refuseIfExternal(state, 'Setup')) {
         return
       }
@@ -327,6 +346,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             installLatest(
               installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
             ),
+        )
+        await context.globalState.update(
+          OWNED_INSTALL_KEY,
+          managedBinaryPath(homedir(), process.platform),
         )
         log(`setup installed ${tag}`)
 
@@ -383,7 +406,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       // with "not recognised" exactly for the users who had not installed it
       // themselves.
       await vscode.env.clipboard.writeText(
-        uninstallCommandFor(resolveState(storageDir).activePath),
+        uninstallCommandFor(resolveState(storageDir, ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage(
         'Uninstall command copied. Run it in a terminal to remove codebase-memory-mcp itself.',
@@ -391,7 +414,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
     'betterCmm.copyUninstallCommandBash': async () => {
       await vscode.env.clipboard.writeText(
-        uninstallCommandForBash(resolveState(storageDir).activePath),
+        uninstallCommandForBash(resolveState(storageDir, ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage('Uninstall command copied for Git Bash.')
     },
@@ -417,6 +440,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       try {
         rmSync(managed, { force: true })
+        // Drop the ownership record with the file, so a binary that later
+        // reappears at this path is not mistaken for ours.
+        await context.globalState.update(OWNED_INSTALL_KEY, undefined)
         log(`removed ${managed}`)
       } catch (cause) {
         fail('Removing the managed binary', cause)
@@ -433,7 +459,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.copyBinaryDir': async () => {
-      const active = resolveState(storageDir).activePath
+      const active = resolveState(storageDir, ownedInstallPath()).activePath
       if (active === null) {
         return
       }
@@ -454,7 +480,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (key === undefined || value === undefined) {
         return
       }
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (state.activePath === null) {
         return
       }
@@ -471,7 +497,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refreshCliSettings()
     },
     'betterCmm.updateBinary': async () => {
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (refuseIfExternal(state, 'Update')) {
         return
       }
@@ -523,7 +549,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         canSelectMany: true,
         openLabel: 'Add repositories',
       })
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (picked === undefined || state.activePath === null) {
         return
       }
@@ -560,7 +586,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.removeProject': async (name) => {
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (name === undefined || state.activePath === null) {
         return
       }
@@ -599,7 +625,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
     },
     'betterCmm.reindex': async () => {
-      const state = resolveState(storageDir)
+      const state = resolveState(storageDir, ownedInstallPath())
       if (state.activePath === null || projects.length === 0) {
         return
       }

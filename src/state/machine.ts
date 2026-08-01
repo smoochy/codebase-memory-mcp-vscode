@@ -39,7 +39,7 @@ export interface AllowedActions {
 }
 
 /** Compare paths tolerating separator and case differences on Windows. */
-function samePath(a: string, b: string): boolean {
+export function samePath(a: string, b: string): boolean {
   const normalize = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
   return normalize(a) === normalize(b)
 }
@@ -47,8 +47,10 @@ function samePath(a: string, b: string): boolean {
 /**
  * Derive the current state. Pure: every input is passed in, nothing is probed.
  *
- * Under `auto` an existing external binary wins. The user's own installation
- * takes precedence, the inverse of the original extension's behaviour.
+ * Under `auto` an installation this extension made wins, and any other
+ * installation wins when there is none. The caller decides what counts as
+ * managed - it is a record of having installed it, not a location, because the
+ * CLI's own installer writes to the same directory.
  */
 export function computeState(input: StateInput): ExtensionState {
   const { source, managedPath, externalPath, registration } = input

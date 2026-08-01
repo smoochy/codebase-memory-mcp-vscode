@@ -28,10 +28,16 @@ can:
 The `codebase-memory-mcp` binary is **not bundled** with this extension. On first use the
 extension downloads the appropriate binary for your platform and architecture from the
 [project's GitHub releases](https://github.com/DeusData/codebase-memory-mcp/releases),
-verifies it against the release's published SHA-256 checksums, and stores it in the
-extension's own storage directory. If you already manage your own installation (`~/.local/bin`
-or `PATH`), the extension prefers that installation and never overwrites it (see
-`betterCmm.binarySource` below).
+verifies it against the release's published SHA-256 checksums, and installs it to
+`~/.local/bin`. That location is not a preference: the CLI's own `install` writes an MCP
+entry naming an absolute path there, so a binary kept anywhere else would leave that entry
+pointing at a file that is not present, and the server would never start.
+
+If you already manage your own installation (`~/.local/bin` or `PATH`), the extension
+prefers it and never overwrites it (see `betterCmm.binarySource` below). Because both end
+up in the same directory, ownership is decided by a record the extension writes when it
+installs, not by the location - a binary the extension did not install is never updated,
+overwritten, or offered for removal.
 
 ## Settings
 

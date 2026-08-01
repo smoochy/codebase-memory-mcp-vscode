@@ -47,6 +47,23 @@ export function replaceBinary(
 ): void {
   ops.mkdirp(parentDir(target))
 
+  // Stage beside the target, then rename onto it. The destination is a
+  // directory on PATH now, so a direct write would truncate the live binary
+  // and leave a partial, executable file behind on any interruption - and it
+  // would follow a symlink at that name, writing the release bytes through it
+  // and marking the link's target executable. A rename replaces the name
+  // itself, atomically, and never follows.
+  const staged = `${target}.new`
+  try {
+    ops.remove(staged)
+  } catch {
+    // Not there, which is the normal case.
+  }
+  ops.write(staged, data)
+  if (platform !== 'win32') {
+    ops.chmod(staged, 0o755)
+  }
+
   const backup = `${target}.old`
   let movedAside = false
 
@@ -64,8 +81,13 @@ export function replaceBinary(
   }
 
   try {
-    ops.write(target, data)
+    ops.rename(staged, target)
   } catch (cause) {
+    try {
+      ops.remove(staged)
+    } catch {
+      // Leftover scratch next to the target; harmless and replaced next time.
+    }
     if (movedAside) {
       try {
         ops.rename(backup, target)
@@ -88,7 +110,6 @@ export function replaceBinary(
     }
   }
 
-  if (platform !== 'win32') {
-    ops.chmod(target, 0o755)
-  }
+  // The mode was set on the staged file before the rename, which carries it
+  // across, so there is nothing to chmod on the live path here.
 }
