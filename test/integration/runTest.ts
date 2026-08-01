@@ -38,7 +38,7 @@ async function main(): Promise<void> {
 
     if (!existsSync(resultFile)) {
       throw new Error(
-        'the test host exited without reporting a result — no tests were run',
+        'the test host exited without reporting a result - no tests were run',
       )
     }
 

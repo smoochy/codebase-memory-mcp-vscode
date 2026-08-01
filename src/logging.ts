@@ -43,11 +43,11 @@ const SECRET_KEY =
  * Scans for `<key><sep><value>` occurrences (query-string `=` or JSON `:`) where the key
  * name contains a secret keyword, and replaces the value with REDACTED in place.
  *
- * The `=` form (query string / env var) matches up to the next `&`, quote, or whitespace —
+ * The `=` form (query string / env var) matches up to the next `&`, quote, or whitespace -
  * same behaviour as before. The `:` form (JSON) only redacts when the value is a proper
  * double-quoted JSON string, walked char-by-char honouring `\"` escapes so the real closing
  * quote is never mistaken for content. Any other JSON value shape (array, object, number,
- * bare word) is left completely untouched — under-redacting a non-string is fine, corrupting
+ * bare word) is left completely untouched - under-redacting a non-string is fine, corrupting
  * the line while leaking part of the value is not.
  */
 function redactKeyedValues(message: string): string {
@@ -102,7 +102,7 @@ function redactKeyedValues(message: string): string {
       }
     }
 
-    // Not a quoted string (array/object/number/bool/null/unterminated) — leave untouched.
+    // Not a quoted string (array/object/number/bool/null/unterminated) - leave untouched.
     i = valueStart
   }
 

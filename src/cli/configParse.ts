@@ -9,6 +9,31 @@
  */
 const KEY_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 
+/**
+ * Options a key accepts, read out of the CLI's own description.
+ *
+ * The CLI has no machine-readable schema, but it does spell the choices out
+ * in prose ("Pin graph UI language: en, zh, or auto"). Parsing that is what
+ * turns a free-text field into a picker without hardcoding the CLI's keys
+ * here, which would go stale the moment upstream adds one.
+ */
+export function optionsFromDescription(description: string): string[] {
+  const match = /:\s*([a-z0-9_-]+(?:\s*,\s*[a-z0-9_-]+)*\s*,?\s*or\s+[a-z0-9_-]+)\s*$/i.exec(
+    description.trim(),
+  )
+  if (match === null) {
+    return []
+  }
+  const options = match[1]!
+    .replace(/\bor\b/gi, ',')
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+  // Two is the smallest set worth a picker; one would be a control with no
+  // choice in it.
+  return new Set(options).size === options.length && options.length >= 2 ? options : []
+}
+
 export interface CliSetting {
   key: string
   value: string
@@ -24,7 +49,7 @@ interface KeyInfo {
 /**
  * Parse `codebase-memory-mcp config` (no argument).
  *
- * Only the block below the `Config keys:` header is read — the `Commands:`
+ * Only the block below the `Config keys:` header is read - the `Commands:`
  * block above it looks similar enough to match a naive pattern.
  */
 export function parseConfigKeys(stdout: string): Map<string, KeyInfo> {

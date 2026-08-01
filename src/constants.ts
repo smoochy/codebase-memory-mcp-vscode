@@ -25,7 +25,7 @@ export const UNINSTALL_COMMAND = 'codebase-memory-mcp uninstall'
  * Characters a shell still acts on inside double quotes, plus anything that
  * would submit the line before the user can read it.
  *
- * A backslash is deliberately absent — every Windows path contains one — and
+ * A backslash is deliberately absent - every Windows path contains one - and
  * so is the space, which is the whole reason the value gets quoted.
  */
 const REJECTED_IN_PATH = /["`$\r\n\t]/
@@ -56,4 +56,18 @@ export function uninstallCommandFor(
   // the opposite rule, so no single spelling suits both and the default shell
   // wins.
   return platform === 'win32' ? `& "${binaryPath}" uninstall` : `"${binaryPath}" uninstall`
+}
+
+/**
+ * The same command for a POSIX shell running on Windows.
+ *
+ * Git Bash is common enough on Windows that offering only the PowerShell
+ * spelling means half the users paste a line their shell cannot parse. It
+ * takes forward slashes and no call operator.
+ */
+export function uninstallCommandForBash(binaryPath: string | null): string {
+  if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
+    return UNINSTALL_COMMAND
+  }
+  return `"${binaryPath.replace(/\\/g, '/')}" uninstall`
 }

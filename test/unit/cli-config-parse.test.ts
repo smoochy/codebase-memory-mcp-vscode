@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict'
 import {
   mergeSettings,
+  optionsFromDescription,
   parseConfigKeys,
   parseConfigList,
 } from '../../src/cli/configParse'
@@ -49,6 +50,33 @@ describe('parseConfigKeys', () => {
   it('returns an empty map when the section is missing', () => {
     assert.equal(parseConfigKeys('Usage: something else').size, 0)
   })
+})
+
+describe('optionsFromDescription', () => {
+  // The CLI has no machine-readable schema but names the choices in prose, so
+  // a picker can be built without hardcoding upstream's keys here.
+  it('reads the choices out of the CLI description', () => {
+    assert.deepEqual(optionsFromDescription('Pin graph UI language: en, zh, or auto'), [
+      'en',
+      'zh',
+      'auto',
+    ])
+  })
+
+  it('handles a two-way choice', () => {
+    assert.deepEqual(optionsFromDescription('Mode: fast or thorough'), ['fast', 'thorough'])
+  })
+
+  for (const prose of [
+    'Max files for auto-indexing new projects',
+    'Register background git watcher on session connect',
+    '',
+    'Something with a colon: but no list',
+  ]) {
+    it(`leaves a free-text setting alone: "${prose}"`, () => {
+      assert.deepEqual(optionsFromDescription(prose), [])
+    })
+  }
 })
 
 describe('config key shape', () => {

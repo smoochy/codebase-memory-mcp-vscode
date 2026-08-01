@@ -34,7 +34,7 @@ describe('escapeHtml', () => {
   it('escapes & first so entities it emits are not re-escaped', () => {
     // A raw < is the ordering probe: the < rule emits "&lt;", which contains an
     // &. If the & pass ran after it, that emitted & would itself be escaped and
-    // the output would be "&amp;lt;" — rendering the entity as visible text.
+    // the output would be "&amp;lt;" - rendering the entity as visible text.
     // This assertion fails if the & pass is moved anywhere but first.
     assert.equal(escapeHtml('<'), '&lt;')
     assert.equal(escapeHtml('a<b&c'), 'a&lt;b&amp;c')
@@ -47,7 +47,7 @@ describe('escapeHtml', () => {
   })
 
   it('does not throw when malformed CLI JSON yields a non-string', () => {
-    // ProjectSummary is cast, not validated — a null/number name must degrade
+    // ProjectSummary is cast, not validated - a null/number name must degrade
     // to harmless text rather than crashing the whole panel render.
     const bad = escapeHtml as unknown as (v: unknown) => string
     assert.equal(bad(null), 'null')
@@ -68,8 +68,8 @@ describe('formatCount', () => {
   })
 
   it('shows a dash rather than a bare zero for nothing indexed', () => {
-    assert.equal(formatCount(0), '—')
-    assert.equal(formatCount(undefined), '—')
+    assert.equal(formatCount(0), '-')
+    assert.equal(formatCount(undefined), '-')
   })
 })
 
@@ -81,8 +81,8 @@ describe('formatBytes', () => {
   })
 
   it('shows a dash for an absent or empty index', () => {
-    assert.equal(formatBytes(0), '—')
-    assert.equal(formatBytes(undefined), '—')
+    assert.equal(formatBytes(0), '-')
+    assert.equal(formatBytes(undefined), '-')
   })
 
   it('stops at the largest unit rather than running off the end of the table', () => {
@@ -178,7 +178,7 @@ describe('renderBody', () => {
     )
     assert.match(html, /15/)
     assert.match(html, /27/)
-    // The third tile counts projects, per the spec — it replaces the reference
+    // The third tile counts projects, per the spec - it replaces the reference
     // extension's always-empty Uptime tile. Per-project size stays on the card.
     assert.match(html, /<div class="metric-value">2<\/div>/)
     assert.match(html, /Projects/)
@@ -372,6 +372,47 @@ describe('renderBody', () => {
       assert.match(html, /also removes its MCP registration/)
     })
 
+    it('shows the command inline rather than linking to another screen', () => {
+      const html = renderBody(settingsModel([]), 'n1')
+      assert.match(html, /class="cmd"/)
+      assert.doesNotMatch(html, /data-command="betterCmm\.showUninstall"/)
+    })
+
+    it('offers PowerShell and Git Bash separately on Windows, each with its own copy', () => {
+      const html = renderBody(
+        { ...settingsModel([]), platform: 'win32', gitBashAvailable: true },
+        'n1',
+      )
+      assert.match(html, /PowerShell/)
+      assert.match(html, /Git Bash/)
+      assert.match(html, /data-command="betterCmm\.copyUninstallCommand"/)
+      assert.match(html, /data-command="betterCmm\.copyUninstallCommandBash"/)
+      // The call operator is PowerShell-only; the bash line uses forward slashes.
+      assert.match(html, /&amp; &quot;\/bin\/cmm&quot; uninstall/)
+    })
+
+    it('omits the Git Bash line when no Git Bash was found', () => {
+      const html = renderBody(
+        { ...settingsModel([]), platform: 'win32', gitBashAvailable: false },
+        'n1',
+      )
+      assert.doesNotMatch(html, /Git Bash/)
+      assert.doesNotMatch(html, /copyUninstallCommandBash/)
+    })
+
+    it('offers one line only off Windows', () => {
+      const html = renderBody({ ...settingsModel([]), platform: 'linux' }, 'n1')
+      assert.match(html, /Terminal/)
+      assert.doesNotMatch(html, /PowerShell/)
+    })
+
+    it('offers to remove the managed copy only when there is one', () => {
+      const withCopy = renderBody({ ...settingsModel([]), managedBinaryPresent: true }, 'n1')
+      assert.match(withCopy, /data-command="betterCmm\.removeManagedBinary"/)
+      const without = renderBody({ ...settingsModel([]), managedBinaryPresent: false }, 'n1')
+      assert.doesNotMatch(without, /removeManagedBinary/)
+    })
+
     it('escapes a hostile setting key and value', () => {
       const html = renderBody(
         settingsModel([{ key: XSS_PAYLOAD, value: XSS_PAYLOAD, default: '', description: '' }]),
@@ -391,57 +432,6 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /data-command="betterCmm\.refresh"/)
   })
 
-  describe('uninstall screen', () => {
-    const uninstallModel = (activePath: string | null): PanelModel => ({
-      state: {
-        kind: 'ready-managed',
-        activePath,
-        effectiveSource: 'managed',
-        notice: null,
-        pathConflict: null,
-      },
-      projects: [],
-      version: '0.9.0',
-      updateAvailable: null,
-      view: 'uninstall',
-    })
-
-    it('replaces the panel rather than rendering alongside it', () => {
-      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
-      assert.match(html, /Uninstall CLI/)
-      // None of the normal panel belongs on this screen.
-      assert.doesNotMatch(html, /data-command="betterCmm\.addProject"/)
-      assert.doesNotMatch(html, /class="metrics"/)
-    })
-
-    it('shows the command bound to the resolved binary, not a bare alias', () => {
-      // The bare name only works when the CLI is on PATH; a managed install
-      // never is, so the copied command failed for exactly those users.
-      const html = renderBody(uninstallModel('C:/Program Files/cmm.exe'), 'n1')
-      assert.match(html, /&quot;C:\/Program Files\/cmm\.exe&quot; uninstall/)
-    })
-
-    it('falls back to the bare command when no binary is resolved', () => {
-      const html = renderBody(uninstallModel(null), 'n1')
-      assert.match(html, /codebase-memory-mcp uninstall/)
-    })
-
-    it('offers copying and a way back', () => {
-      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
-      assert.match(html, /data-command="betterCmm\.copyUninstallCommand"/)
-      assert.match(html, /data-command="betterCmm\.closeUninstall"/)
-    })
-
-    it('never runs the command itself, only shows it', () => {
-      const html = renderBody(uninstallModel('C:/bin/cmm.exe'), 'n1')
-      assert.match(html, /Run it yourself in a terminal/)
-    })
-
-    it('escapes a hostile binary path in the command block', () => {
-      const html = renderBody(uninstallModel(XSS_PAYLOAD), 'n1')
-      assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
-    })
-  })
 
   it('escapes a hostile git branch (also straight from the CLI)', () => {
     const html = renderBody(
@@ -457,7 +447,7 @@ describe('renderBody', () => {
   })
 
   it('escapes a hostile version and updateAvailable (both come from the CLI)', () => {
-    // The version strings are CLI stdout and a GitHub release tag — untrusted
+    // The version strings are CLI stdout and a GitHub release tag - untrusted
     // like every other field, and updateAvailable additionally lands inside a
     // button label rather than plain text.
     const html = renderBody(
@@ -526,7 +516,7 @@ describe('renderBody', () => {
     const rawQuoteCount = (tag.match(/"/g) ?? []).length
     assert.equal(rawQuoteCount, 10, `expected exactly 10 raw quotes in tag, got: ${tag}`)
 
-    // No live onmouseover attribute was injected — only inert escaped text
+    // No live onmouseover attribute was injected - only inert escaped text
     // inside the data-project value is permitted, never a real "onmouseover=".
     assert.doesNotMatch(tag, /\bonmouseover\s*="/)
 
@@ -541,7 +531,7 @@ describe('renderBody', () => {
     const buttonMatch = /<button class="remove"[^>]*>/.exec(html)
     assert.ok(buttonMatch)
     const tag = buttonMatch[0]
-    // Exactly one data-project attribute, still a single well-formed tag —
+    // Exactly one data-project attribute, still a single well-formed tag -
     // the raw quote/backtick did not add or split any attribute.
     assert.equal((tag.match(/data-project="/g) ?? []).length, 1)
     assert.equal((tag.match(/`/g) ?? []).length, 0, 'raw backtick must not survive escaping')

@@ -14,7 +14,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined
   private model: PanelModel | undefined
   private lastHtml = ''
-  private view_: 'main' | 'uninstall' | 'settings' = 'main'
+  private view_: 'main' | 'settings' = 'main'
   private cliSettings: CliSetting[] = []
 
   constructor(
@@ -69,7 +69,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   }
 
   /** Switch between the main panel and a full-screen view. */
-  setView(view: 'main' | 'uninstall' | 'settings'): void {
+  setView(view: 'main' | 'settings'): void {
     this.view_ = view
     if (this.model !== undefined) {
       this.model = { ...this.model, view }

@@ -1,7 +1,7 @@
 import { upstreamRepoUrl } from '../binary/assets'
-import { uninstallCommandFor } from '../constants'
+import { uninstallCommandFor, uninstallCommandForBash } from '../constants'
 import type { ProjectSummary } from '../cli/client'
-import type { CliSetting } from '../cli/configParse'
+import { optionsFromDescription, type CliSetting } from '../cli/configParse'
 import { allowedActions, type ExtensionState } from '../state/machine'
 
 export interface PanelModel {
@@ -20,11 +20,17 @@ export interface PanelModel {
    */
   loading?: boolean
   /** Which screen the panel shows. Anything but `main` replaces the whole view. */
-  view?: 'main' | 'uninstall' | 'settings'
+  view?: 'main' | 'settings'
   /** True after registering, until the window reloads and the entry takes effect. */
   restartRequired?: boolean
   /** CLI settings from `config list`, shown on the settings screen. */
   cliSettings?: CliSetting[]
+  /** Host platform, so the uninstall block offers the right shell. */
+  platform?: NodeJS.Platform
+  /** True when a Git Bash shell was found, which gets its own command line. */
+  gitBashAvailable?: boolean
+  /** True when the extension has its own copy of the binary to remove. */
+  managedBinaryPresent?: boolean
 }
 
 /**
@@ -51,9 +57,9 @@ export function escapeHtml(value: string): string {
     .replace(/`/g, '&#96;')
 }
 
-/** Thousands separators, and an em dash for "nothing to report yet". */
+/** Thousands separators, and a dash for "nothing to report yet". */
 export function formatCount(value: number | undefined): string {
-  return value === undefined || value <= 0 ? '—' : value.toLocaleString('en-US')
+  return value === undefined || value <= 0 ? '-' : value.toLocaleString('en-US')
 }
 
 /**
@@ -63,7 +69,7 @@ export function formatCount(value: number | undefined): string {
  */
 export function formatBytes(value: number | undefined): string {
   if (value === undefined || value <= 0) {
-    return '—'
+    return '-'
   }
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let size = value
@@ -92,7 +98,7 @@ const ICONS: Record<string, string> = {
   arrowUp: '<path d="M8 13V4m0 0L4.8 7.2M8 4l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   logs: '<path d="M3.5 4h9M3.5 7h6M3.5 10h9M3.5 13h4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
   // Reindex rebuilds the stored graph, so it reads as a database rather than a
-  // second refresh arrow — two identical arrows side by side are a coin toss.
+  // second refresh arrow - two identical arrows side by side are a coin toss.
   reindex: '<ellipse cx="8" cy="4" rx="4.6" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.4 4v8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8V4M3.4 8c0 1 2.1 1.8 4.6 1.8s4.6-.8 4.6-1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>',
   trash: '<path d="M2.8 4.4h10.4M6.2 4.4V3.2a.9.9 0 0 1 .9-.9h1.8a.9.9 0 0 1 .9.9v1.2M4.3 4.4v8a1.2 1.2 0 0 0 1.2 1.2h5a1.2 1.2 0 0 0 1.2-1.2v-8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
@@ -146,8 +152,8 @@ function metrics(projects: ProjectSummary[]): string {
 /**
  * The header status reflects MCP registration, not a server process.
  *
- * The extension does not own the server lifecycle — the CLI's own `install`
- * subcommand registers it and VS Code starts it — so there is no running or
+ * The extension does not own the server lifecycle - the CLI's own `install`
+ * subcommand registers it and VS Code starts it - so there is no running or
  * stopped state here to report honestly.
  */
 function statusChip(state: ExtensionState): string {
@@ -164,7 +170,7 @@ function statusChip(state: ExtensionState): string {
  * The two versions in the sub-title: the CLI's, then this extension's.
  *
  * The CLI version carries the binary's path as its tooltip. That is the only
- * place the path appears now — a full path is too long for a panel this narrow
+ * place the path appears now - a full path is too long for a panel this narrow
  * and was previously truncated into uselessness on its own row.
  */
 function subVersions(model: PanelModel): string {
@@ -225,7 +231,7 @@ function binaryBar(model: PanelModel): string {
   if (model.state.kind !== 'needs-setup') {
     return ''
   }
-  return '<div class="bar"><span class="tag err">!</span>No binary found — run setup to get started</div>'
+  return '<div class="bar"><span class="tag err">!</span>No binary found - run setup to get started</div>'
 }
 
 function projectCards(projects: ProjectSummary[], loading: boolean): string {
@@ -248,7 +254,7 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
         '<div class="card-text">' +
         // The folder is what the user recognises. The CLI's own name is the
         // whole path with separators turned into hyphens, which is unreadable
-        // at this width and repeats the line below it — it moves to the
+        // at this width and repeats the line below it - it moves to the
         // tooltip, where it is still available for the CLI commands that need
         // it verbatim.
         `<div class="card-name" title="${escapeHtml(`Project name: ${project.name}`)}">` +
@@ -290,7 +296,7 @@ function trimmedPath(rootPath: string): string {
   return typeof rootPath === 'string' ? rootPath.replace(/[\\/]+$/, '') : ''
 }
 
-/** The last path segment — what the user actually calls the repository. */
+/** The last path segment - what the user actually calls the repository. */
 function folderName(rootPath: string): string {
   const trimmed = trimmedPath(rootPath)
   const parts = trimmed.split(/[\\/]/)
@@ -313,14 +319,14 @@ function parentPath(rootPath: string): string {
 function branchTag(branch: string): string {
   const hint =
     branch === 'DETACHED'
-      ? 'Git: no branch checked out (detached HEAD) — the index follows this exact commit'
+      ? 'Git: no branch checked out (detached HEAD) - the index follows this exact commit'
       : `Git branch indexed: ${branch}`
   return `<span class="branch" title="${escapeHtml(hint)}">${escapeHtml(branch)}</span>`
 }
 
 /**
  * The only script the panel ships. Built here so no caller can emit a script
- * tag without the nonce — every `renderBody` return path goes through this.
+ * tag without the nonce - every `renderBody` return path goes through this.
  */
 function clickHandlerScript(nonce: string): string {
   return `<script nonce="${escapeHtml(nonce)}">
@@ -356,26 +362,60 @@ document.addEventListener('change', (event) => {
  * interactively whether to delete existing indexes and removes the binary
  * itself, so both decisions stay visibly with the user in their own terminal.
  */
-function uninstallScreen(model: PanelModel, nonce: string): string {
-  const command = uninstallCommandFor(model.state.activePath)
+/** One command line with its own copy button, so the right one is one click away. */
+function commandLine(label: string, command: string, copyCommand: string): string {
   return (
-    '<main>' +
-    header(model) +
-    section(
-      'Uninstall CLI',
-      '<p class="lead">This removes the codebase-memory-mcp binary and its ' +
-        'registration. Run it yourself in a terminal — it asks whether to ' +
-        'delete the indexes it built, and that answer should be yours.</p>' +
-        `<pre class="cmd"><code>${escapeHtml(command)}</code></pre>` +
-        '<div class="actions">' +
-        button('betterCmm.copyUninstallCommand', 'Copy command', 'copy', 'primary') +
-        button('betterCmm.closeUninstall', 'Cancel', 'close') +
-        '</div>' +
-        '<p class="footnote">Uninstalling the CLI does not remove this ' +
-        'extension, and removing the extension does not remove the CLI.</p>',
-    ) +
-    '</main>' +
-    clickHandlerScript(nonce)
+    '<div class="cmd-row">' +
+    `<div class="cmd-label">${escapeHtml(label)}</div>` +
+    `<pre class="cmd"><code>${escapeHtml(command)}</code></pre>` +
+    `<div class="actions">${button(copyCommand, 'Copy command', 'copy')}</div>` +
+    '</div>'
+  )
+}
+
+/**
+ * The uninstall block, rendered inside the settings screen.
+ *
+ * The extension deliberately does not run the CLI's own uninstall: it asks
+ * interactively whether to delete existing indexes and removes the binary
+ * itself, so both decisions stay visibly with the user in their own terminal.
+ * Removing the copy the extension itself installed is a different matter - it
+ * owns that one, so it offers to do it.
+ */
+function uninstallBlock(model: PanelModel): string {
+  const active = model.state.activePath
+  const windows = model.platform === 'win32'
+
+  const lines = windows
+    ? commandLine('PowerShell', uninstallCommandFor(active, 'win32'), 'betterCmm.copyUninstallCommand') +
+      (model.gitBashAvailable === true
+        ? commandLine(
+            'Git Bash',
+            uninstallCommandForBash(active),
+            'betterCmm.copyUninstallCommandBash',
+          )
+        : '')
+    : commandLine('Terminal', uninstallCommandFor(active, 'linux'), 'betterCmm.copyUninstallCommand')
+
+  return (
+    '<p class="lead">Removing the CLI also removes its MCP registration, so no ' +
+    'editor keeps pointing at a binary that is gone. Run it yourself in a ' +
+    'terminal: it asks whether to delete the indexes it built, and that answer ' +
+    'should be yours.</p>' +
+    lines +
+    (model.managedBinaryPresent === true
+      ? '<p class="lead">This extension also keeps its own copy, and a small ' +
+        'launcher on your PATH that points at it. Those are the extension\'s to ' +
+        'remove, so it can do that for you.</p>' +
+        `<div class="actions">${button(
+          'betterCmm.removeManagedBinary',
+          'Remove the managed copy and launcher',
+          'trash',
+          'danger',
+        )}</div>`
+      : '') +
+    '<p class="footnote">Uninstalling the CLI does not remove this extension, ' +
+    'and removing the extension does not remove the CLI.</p>'
   )
 }
 
@@ -388,18 +428,27 @@ function uninstallScreen(model: PanelModel, nonce: string): string {
  */
 function settingRow(setting: CliSetting): string {
   const isBoolean = setting.value === 'true' || setting.value === 'false'
-  const control = isBoolean
-    ? `<select class="ctl" data-setting="${escapeHtml(setting.key)}">` +
-      ['true', 'false']
-        .map(
-          (option) =>
-            `<option value="${option}"${setting.value === option ? ' selected' : ''}>` +
-            `${option}</option>`,
-        )
-        .join('') +
-      '</select>'
-    : `<input class="ctl" type="text" data-setting="${escapeHtml(setting.key)}" ` +
-      `value="${escapeHtml(setting.value)}">`
+  // Booleans are known without asking; anything else may still name its
+  // choices in the CLI's own description, which turns it into a picker too.
+  const described = isBoolean ? [] : optionsFromDescription(setting.description)
+  const options = isBoolean ? ['true', 'false'] : described
+  // The current value belongs in the list even when the description missed it,
+  // so opening the picker can never silently change the setting.
+  const choices = options.includes(setting.value) ? options : [...options, setting.value]
+
+  const control =
+    options.length > 0
+      ? `<select class="ctl" data-setting="${escapeHtml(setting.key)}">` +
+        choices
+          .map(
+            (option) =>
+              `<option value="${escapeHtml(option)}"${setting.value === option ? ' selected' : ''}>` +
+              `${escapeHtml(option)}</option>`,
+          )
+          .join('') +
+        '</select>'
+      : `<input class="ctl" type="text" data-setting="${escapeHtml(setting.key)}" ` +
+        `value="${escapeHtml(setting.value)}">`
 
   const modified = setting.default !== '' && setting.value !== setting.default
   return (
@@ -421,7 +470,7 @@ function settingRow(setting: CliSetting): string {
  * The settings screen.
  *
  * VS Code's own settings UI can only render static declarations, so the CLI's
- * own keys — which are discovered at runtime from `config list` — could never
+ * own keys - which are discovered at runtime from `config list` - could never
  * appear there. Both live here instead, with the destructive action last and
  * visually separated.
  */
@@ -444,15 +493,15 @@ function settingsScreen(model: PanelModel, nonce: string): string {
       '<p class="lead">These belong to the CLI itself and apply to every editor ' +
         'that uses it, not just this window.</p>' +
         (cliSettings.length === 0
-          ? '<p class="empty">No CLI settings available — is the binary installed?</p>'
+          ? '<p class="empty">No CLI settings available - is the binary installed?</p>'
           : cliSettings.map(settingRow).join('')),
     ) +
+    // Inline rather than a link to a separate screen: this is the last thing
+    // on the page anyway, and a second navigation step to read three lines is
+    // a step that earns nothing.
     '<section class="danger">' +
     '<h2>Uninstall</h2>' +
-    '<p class="lead">Removing the CLI also removes its MCP registration, so no ' +
-    'editor will keep pointing at a binary that is gone. Your indexes are a ' +
-    'separate question the command asks you directly.</p>' +
-    `<div class="actions">${button('betterCmm.showUninstall', 'Uninstall CLI…', 'trash', 'danger')}</div>` +
+    uninstallBlock(model) +
     '</section>' +
     `<div class="actions">${button('betterCmm.closeScreen', 'Back', 'back')}</div>` +
     '</main>' +
@@ -463,9 +512,6 @@ function settingsScreen(model: PanelModel, nonce: string): string {
 /** Header, notices, actions, project list. Static markup, no framework. */
 export function renderBody(model: PanelModel, nonce: string): string {
   const { state } = model
-  if (model.view === 'uninstall') {
-    return uninstallScreen(model, nonce)
-  }
   if (model.view === 'settings') {
     return settingsScreen(model, nonce)
   }
@@ -517,7 +563,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
     parts.push(
       notice(
         'warning',
-        'Reload VS Code to finish registering the MCP server — it is not reachable until then.',
+        'Reload VS Code to finish registering the MCP server - it is not reachable until then.',
       ),
     )
   }
@@ -599,7 +645,7 @@ export const PANEL_CSS = `
 }
 /*
  * VS Code puts one of these classes on the webview's body, which is the only
- * reliable signal for theme polarity inside a webview — prefers-color-scheme
+ * reliable signal for theme polarity inside a webview - prefers-color-scheme
  * follows the OS, not the editor theme, so a dark VS Code on a light desktop
  * would otherwise get the wrong overlay.
  */
@@ -647,6 +693,12 @@ header {
   white-space: pre-wrap; word-break: break-all; user-select: text;
 }
 .footnote { margin: 10px 12px 0; font-size: 10px; color: var(--muted); line-height: 1.5; }
+.cmd-row { margin-bottom: 10px; }
+.cmd-label {
+  margin: 0 12px 3px; font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+}
+.cmd-row .cmd { margin-bottom: 5px; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;

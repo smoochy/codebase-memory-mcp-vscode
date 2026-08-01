@@ -47,7 +47,7 @@ describe('panel renders in a real extension host', () => {
   })
 
   it('resolved the webview and produced markup', () => {
-    assert.ok(html.length > 0, 'panel produced no html — the view never resolved')
+    assert.ok(html.length > 0, 'panel produced no html - the view never resolved')
   })
 
   it('injects the stylesheet, not just the markup', () => {
@@ -89,7 +89,7 @@ describe('panel renders in a real extension host', () => {
 
   // Executing each one proves the handler runs. A handler that throws is
   // indistinguishable from a dead button in the UI. Commands that open a modal
-  // dialog (addProject, removeProject) are excluded — they would block here.
+  // dialog (addProject, removeProject) are excluded - they would block here.
   for (const command of [
     'betterCmm.refresh',
     'betterCmm.showLogs',

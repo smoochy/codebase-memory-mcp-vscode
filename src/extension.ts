@@ -3,17 +3,18 @@ import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
 import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
+import { gitBashCandidates, installedCopyPath, mayReplace, shimContents, shimDirectory, shimPath } from './binary/shim'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { INSTALL_COMMAND, uninstallCommandFor } from './constants'
+import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, truncateForLog } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { existsSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
@@ -120,7 +121,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   // One line on every activation, so a log a user attaches to a bug report
-  // always states which build produced it — and so the file exists before
+  // always states which build produced it - and so the file exists before
   // anything goes wrong.
   log(`activated, extension v${extensionVersion ?? 'unknown'}`)
 
@@ -201,7 +202,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     }
 
-    panel.update({ state, projects, version, updateAvailable, extensionVersion, restartRequired })
+    panel.update({
+      state,
+      projects,
+      version,
+      updateAvailable,
+      extensionVersion,
+      restartRequired,
+      platform: process.platform,
+      gitBashAvailable: gitBashAvailable(),
+      managedBinaryPresent: existsSync(managedBinaryPath(storageDir, process.platform)),
+    })
   }
 
   /**
@@ -233,6 +244,45 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }
   }
 
+  /** True when a Git Bash shell exists, which then gets its own command line. */
+  const gitBashAvailable = (): boolean =>
+    process.platform === 'win32' &&
+    gitBashCandidates({
+      programFiles: process.env['ProgramFiles'],
+      programFilesX86: process.env['ProgramFiles(x86)'],
+      localAppData: process.env['LOCALAPPDATA'],
+    }).some(existsSync)
+
+  /**
+   * Replace the full copy the CLI's installer leaves on PATH with a launcher.
+   *
+   * The CLI's `install` copies the whole ~36 MB binary into ~/.local/bin. That
+   * leaves two independent copies which drift apart the moment one is updated,
+   * and it is not what a user who asked the extension to manage the binary
+   * expects to find on their PATH. The managed install stays the only real
+   * copy; PATH gets a launcher pointing at it.
+   */
+  const installShim = (managedPath: string): void => {
+    const home = homedir()
+    const shim = shimPath(home, process.platform)
+    const copy = installedCopyPath(home, process.platform)
+    try {
+      mkdirSync(shimDirectory(home), { recursive: true })
+      // Only ever the two names in that one directory, never anything else.
+      if (existsSync(copy) && copy !== managedPath && mayReplace(copy, home, process.platform)) {
+        rmSync(copy, { force: true })
+        log(`replaced the installed copy at ${copy} with a launcher`)
+      }
+      writeFileSync(shim, shimContents(managedPath, process.platform), 'utf8')
+      if (process.platform !== 'win32') {
+        chmodSync(shim, 0o755)
+      }
+    } catch (cause) {
+      // A missing launcher costs a PATH entry, not the installation.
+      log(`could not write the launcher: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+
   const fail = (what: string, cause: unknown): void => {
     const detail = cause instanceof Error ? cause.message : String(cause)
     log(`${what} failed: ${detail}`)
@@ -240,7 +290,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       log(cause.stack)
     }
     void vscode.window.showErrorMessage(
-      `${what} failed: ${redactSecrets(detail)} — see the Better Codebase Memory MCP output for details.`,
+      `${what} failed: ${redactSecrets(detail)} - see the Better Codebase Memory MCP output for details.`,
     )
   }
 
@@ -284,7 +334,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
       const managed = managedBinaryPath(storageDir, process.platform)
       if (existsSync(managed) && state.kind === 'ready-managed') {
-        // Already installed and registered — nothing to download.
+        // Already installed and registered - nothing to download.
         await refresh()
         return
       }
@@ -311,6 +361,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const registered = await registerMcp()
         if (registered.ok) {
           restartRequired = true
+          installShim(managedBinaryPath(storageDir, process.platform))
         }
         await refresh()
 
@@ -363,14 +414,40 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         'Uninstall command copied. Run it in a terminal to remove codebase-memory-mcp itself.',
       )
     },
-    'betterCmm.showUninstall': () => {
-      panel.setView('uninstall')
+    'betterCmm.copyUninstallCommandBash': async () => {
+      await vscode.env.clipboard.writeText(
+        uninstallCommandForBash(resolveState(storageDir).activePath),
+      )
+      void vscode.window.showInformationMessage('Uninstall command copied for Git Bash.')
     },
-    'betterCmm.closeUninstall': async () => {
-      panel.setView('main')
-      // Refresh on the way back: the user may have run the command in a
-      // terminal while the screen was open, so the panel would otherwise show
-      // a binary that is no longer there.
+    'betterCmm.removeManagedBinary': async () => {
+      const managed = managedBinaryPath(storageDir, process.platform)
+      if (!existsSync(managed)) {
+        return
+      }
+      const confirmed = await vscode.window.showWarningMessage(
+        'Remove the copy this extension installed, and its launcher on your PATH?',
+        { modal: true, detail: 'Indexes and MCP entries are not touched.' },
+        'Remove',
+      )
+      if (confirmed !== 'Remove') {
+        return
+      }
+      const home = homedir()
+      const shim = shimPath(home, process.platform)
+      for (const target of [managed, shim]) {
+        try {
+          // The managed copy lives in the extension's own storage; the shim is
+          // matched against the one name in the one directory it may occupy.
+          if (target === managed || mayReplace(target, home, process.platform)) {
+            rmSync(target, { force: true })
+            log(`removed ${target}`)
+          }
+        } catch (cause) {
+          fail('Removing the managed binary', cause)
+          return
+        }
+      }
       await refresh()
     },
     'betterCmm.showSettings': async () => {

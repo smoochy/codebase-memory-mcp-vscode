@@ -72,7 +72,7 @@ export function replaceBinary(
       } catch (rollbackCause) {
         throw new Error(
           `install failed and the previous binary could not be restored; ` +
-            `it is still at ${backup} — restore it by hand (rollback error: ${String(rollbackCause)})`,
+            `it is still at ${backup} - restore it by hand (rollback error: ${String(rollbackCause)})`,
           { cause },
         )
       }

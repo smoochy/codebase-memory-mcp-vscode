@@ -28,7 +28,7 @@ describe('CliClient', () => {
   })
 
   // Each of these reached the panel and threw there before listProjects
-  // validated the shape — inside the refresh timer, which has no handler, so
+  // validated the shape - inside the refresh timer, which has no handler, so
   // the panel broke on every tick rather than once.
   for (const [label, payload] of [
     ['a null payload', '{"structuredContent":null}'],
@@ -139,7 +139,7 @@ describe('CliClient', () => {
     assert.deepEqual(calls[0]?.args, ['cli', 'index_repository', '--repo-path=--exclude=x', '--json'])
   })
 
-  // The value of a setting is not validated anywhere — it comes straight from
+  // The value of a setting is not validated anywhere - it comes straight from
   // a webview field. It stays harmless because it is its own argv element and
   // spawn runs without a shell, which is exactly what this pins.
   it('passes a setting value as one argv element, whatever is in it', async () => {

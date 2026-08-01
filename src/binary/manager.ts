@@ -56,7 +56,7 @@ function join(...parts: string[]): string {
  * Locate the binary inside the extraction directory.
  *
  * Releases sometimes nest the binary one level down, so a single level of
- * subdirectories is searched. Only the exact expected file name is accepted —
+ * subdirectories is searched. Only the exact expected file name is accepted -
  * an archive that happens to carry extra executables cannot substitute one.
  */
 function findExtractedBinary(dir: string, platform: NodeJS.Platform, ops: InstallFileOps): string {

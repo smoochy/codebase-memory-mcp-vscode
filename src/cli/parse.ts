@@ -3,7 +3,7 @@ export type CliResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string; hint?: string; structured?: boolean }
 
-/** Lines that are not the JSON payload — the CLI logs `level=…` to stdout. */
+/** Lines that are not the JSON payload - the CLI logs `level=…` to stdout. */
 export function logLines(stdout: string): string[] {
   return stdout
     .split(/\r?\n/)
@@ -72,7 +72,7 @@ function structuredError(payload: unknown): { error: string; hint?: string } | n
  *
  * Two layers have to come off. The binary prefixes its JSON with log lines
  * such as `level=info msg=mem.init budget_mb=32538`, so `JSON.parse(stdout)`
- * fails outright — hence taking the last `{`-line. What that line contains is
+ * fails outright - hence taking the last `{`-line. What that line contains is
  * then an MCP envelope, not the payload: reading `.projects` straight off it
  * always yielded `undefined`, which is why the panel stayed empty and every
  * failure looked like an empty success.
@@ -137,7 +137,7 @@ function unwrapEnvelope(parsed: unknown): unknown {
       return JSON.parse(text)
     } catch {
       // Every invocation passes --json, so prose is a failure by definition.
-      // Returning the text as a payload made it a silent empty success — the
+      // Returning the text as a payload made it a silent empty success - the
       // exact symptom this whole parser change exists to remove.
       return new NonJsonText(text)
     }

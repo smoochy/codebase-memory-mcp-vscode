@@ -11,10 +11,10 @@ export const COMMAND_IDS = [
   'betterCmm.showLogs',
   'betterCmm.openSettings',
   'betterCmm.reindex',
-  'betterCmm.showUninstall',
-  'betterCmm.closeUninstall',
   'betterCmm.showSettings',
   'betterCmm.closeScreen',
   'betterCmm.copyBinaryDir',
   'betterCmm.setCliSetting',
+  'betterCmm.copyUninstallCommandBash',
+  'betterCmm.removeManagedBinary',
 ] as const

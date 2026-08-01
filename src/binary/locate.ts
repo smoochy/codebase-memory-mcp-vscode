@@ -17,7 +17,7 @@ function join(...parts: string[]): string {
 /**
  * Whether a raw PATH entry is absolute, per the injected platform rather than
  * the host running this code. A relative entry resolves against the process's
- * cwd, which an attacker can control — reject it instead of resolving it.
+ * cwd, which an attacker can control - reject it instead of resolving it.
  */
 function isAbsolute(dir: string, platform: NodeJS.Platform): boolean {
   if (platform === 'win32') {

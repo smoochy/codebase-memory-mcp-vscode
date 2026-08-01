@@ -14,7 +14,7 @@ export type Runner = (command: string, args: string[], timeoutMs: number) => Pro
  * Field names mirror `cli list_projects --json` exactly, including the
  * snake_case `root_path` and `size_bytes`. Renaming them here would mean a
  * translation step that silently yields `undefined` the day the CLI changes a
- * name — which is precisely the bug this shape replaced.
+ * name - which is precisely the bug this shape replaced.
  */
 export interface ProjectSummary {
   name: string
@@ -56,7 +56,7 @@ export class CliClient {
 
     const parsed = extractJson<T>(output.stdout)
     if (parsed.ok || parsed.structured) {
-      // A parsed payload — success or the CLI's own structured error — is the
+      // A parsed payload - success or the CLI's own structured error - is the
       // failure signal, not the exit code (spec, appendix A).
       return parsed
     }
@@ -77,7 +77,7 @@ export class CliClient {
     // This is the one place the untyped CLI payload becomes a typed domain
     // object, so it is the one place the shape has to be checked. `.projects`
     // being null, a string, an object, or an array of nulls all used to reach
-    // the panel and throw there — inside a refresh timer with no handler,
+    // the panel and throw there - inside a refresh timer with no handler,
     // which takes the panel down on every tick rather than once.
     const projects = (result.value as { projects?: unknown } | null)?.projects
     if (!Array.isArray(projects)) {
@@ -95,7 +95,7 @@ export class CliClient {
         )
         // The counts are summed and formatted without further checks, and both
         // operations force ToPrimitive. A non-number there throws during the
-        // render, inside the same unhandled refresh timer — so drop anything
+        // render, inside the same unhandled refresh timer - so drop anything
         // that is not a finite number here rather than at each use.
         .map((entry) => ({
           ...entry,

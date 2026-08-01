@@ -36,7 +36,7 @@ describe('packaged contents', () => {
 
   // A packaged extension runs dist/extension.js, never src/. Every unit test
   // in this repo imports the TypeScript directly, so a stale bundle passes all
-  // of them and still ships the previous UI — which is exactly what happened:
+  // of them and still ships the previous UI - which is exactly what happened:
   // vsce packaged a dist/ built before the panel rewrite, and the installed
   // extension showed the old panel while every test was green.
   describe('bundle freshness', () => {
@@ -52,7 +52,7 @@ describe('packaged contents', () => {
       for (const selector of ['metric-value', '--tint', 'vscode-light']) {
         assert.ok(
           bundle.includes(selector),
-          `dist/extension.js is stale: no "${selector}" — run npm run build`,
+          `dist/extension.js is stale: no "${selector}" - run npm run build`,
         )
       }
       assert.ok(PANEL_CSS.includes('metric-value'))
@@ -80,7 +80,7 @@ describe('packaged contents', () => {
         assert.ok(html.includes(marker), `renderBody lost "${marker}"`)
         assert.ok(
           bundle.includes(marker),
-          `dist/extension.js is stale: no "${marker}" — run npm run build`,
+          `dist/extension.js is stale: no "${marker}" - run npm run build`,
         )
       }
     })

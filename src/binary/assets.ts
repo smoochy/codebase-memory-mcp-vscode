@@ -24,7 +24,7 @@ const RELEASES = `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}/releases
  * Release asset name for a platform and variant.
  *
  * Windows publishes .zip, darwin and linux .tar.gz. The linux `-portable`
- * assets are deliberately unused — the standard build runs everywhere.
+ * assets are deliberately unused - the standard build runs everywhere.
  */
 export function assetName(p: Platform, variant: Variant): string {
   const os = OS_NAMES[p.platform]
