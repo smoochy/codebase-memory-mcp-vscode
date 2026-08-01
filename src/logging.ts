@@ -1,8 +1,26 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
-/** One entry per line, with continuation lines indented so entries stay separable. */
+/** Longest single entry kept. Captured process output can reach megabytes. */
+export const MAX_LOG_ENTRY_CHARS = 8 * 1024
+
+/** Keep the head of an oversized entry, and say plainly that it was cut. */
+export function truncateForLog(message: string): string {
+  if (message.length <= MAX_LOG_ENTRY_CHARS) {
+    return message
+  }
+  const dropped = message.length - MAX_LOG_ENTRY_CHARS
+  return `${message.slice(0, MAX_LOG_ENTRY_CHARS)}… [${String(dropped)} more characters omitted]`
+}
+
+/**
+ * One entry per line, with continuation lines indented so entries stay separable.
+ *
+ * A lone carriage return counts too: an editor treats it as a line break, so
+ * indenting only `\n` let untrusted process output start at column zero and
+ * impersonate a real entry in a log someone reads as evidence.
+ */
 export function formatLine(level: LogLevel, message: string, timestamp: string): string {
-  const body = message.replace(/\n/g, '\n    ')
+  const body = message.replace(/\r\n?|\n/g, '\n    ')
   return `${timestamp} [${level.toUpperCase()}] ${body}`
 }
 
@@ -18,7 +36,8 @@ export function shouldRotate(
   return currentBytes > 0 && currentBytes + incomingBytes > maxBytes
 }
 
-const SECRET_KEY = /(?:access_token|token|api_key|authorization)/i
+const SECRET_KEY =
+  /(?:access_token|token|api_key|authorization|password|passwd|secret|credential|private_key)/i
 
 /**
  * Scans for `<key><sep><value>` occurrences (query-string `=` or JSON `:`) where the key

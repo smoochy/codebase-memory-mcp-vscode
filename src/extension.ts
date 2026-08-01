@@ -7,7 +7,7 @@ import { CliClient, type ProjectSummary } from './cli/client'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, UNINSTALL_COMMAND } from './constants'
 import { LogFile } from './log-file'
-import { redactSecrets } from './logging'
+import { redactSecrets, truncateForLog } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
@@ -100,7 +100,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const log = (message: string): void => {
     // Anything derived from a URL, header or process output goes through the
     // redactor before it can land in a log the user pastes into an issue.
-    const safe = redactSecrets(message)
+    // Captured process output runs to megabytes (see MAX_CAPTURED_OUTPUT), and
+    // one such line would otherwise be written whole, rotate the file three
+    // times over, and later be opened in an editor. The head is the part that
+    // says what went wrong.
+    const safe = truncateForLog(redactSecrets(message))
     channel.appendLine(safe)
     logFile.append('info', safe, new Date().toISOString())
   }

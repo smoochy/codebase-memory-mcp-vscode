@@ -1,7 +1,23 @@
 import * as assert from 'node:assert/strict'
-import { formatLine, redactSecrets, shouldRotate } from '../../src/logging'
+import { formatLine, redactSecrets, shouldRotate , truncateForLog, MAX_LOG_ENTRY_CHARS } from '../../src/logging'
 
 describe('formatLine', () => {
+  // An editor treats a lone CR as a line break, so untrusted process output
+  // containing one could start at column zero and pass for a real entry in a
+  // log someone reads as evidence.
+  it('indents a lone carriage return like any other break', () => {
+    const line = formatLine('info', 'real\rFAKE [ERROR] nothing happened', '2026-08-01T00:00:00Z')
+    assert.ok(!line.includes('\r'))
+    assert.match(line, /\n {4}FAKE/)
+  })
+
+  it('indents CRLF without leaving a stray blank line', () => {
+    assert.equal(
+      formatLine('info', 'a\r\nb', '2026-08-01T00:00:00Z'),
+      '2026-08-01T00:00:00Z [INFO] a\n    b',
+    )
+  })
+
   it('puts the timestamp and level in front of the message', () => {
     assert.equal(
       formatLine('info', 'binary found', '2026-07-30T10:00:00.000Z'),
@@ -220,5 +236,20 @@ describe('redactSecrets', () => {
     const result = redactSecrets('{"msg":"Authorization: Basic zz","count":3}')
     const parsed = JSON.parse(result) as { count: number }
     assert.equal(parsed.count, 3)
+  })
+})
+
+describe('truncateForLog', () => {
+  it('leaves an ordinary entry alone', () => {
+    assert.equal(truncateForLog('short'), 'short')
+  })
+
+  // Captured process output reaches megabytes; one such entry would be written
+  // whole, rotate the file straight through, and later open in an editor.
+  it('cuts an oversized entry and says how much went', () => {
+    const result = truncateForLog('x'.repeat(MAX_LOG_ENTRY_CHARS + 500))
+    assert.ok(result.length < MAX_LOG_ENTRY_CHARS + 100)
+    assert.match(result, /500 more characters omitted/)
+    assert.ok(result.startsWith('x'.repeat(100)))
   })
 })

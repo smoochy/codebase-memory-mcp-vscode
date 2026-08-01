@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { formatLine, shouldRotate, type LogLevel } from './logging'
 
 /** Cap per file and how many old files are kept, per the spec: 1 MB times 3. */
@@ -26,7 +26,10 @@ export class LogFile {
     private readonly maxBytes: number = MAX_LOG_BYTES,
     private readonly keep: number = KEPT_FILES,
   ) {
-    this.path = join(directory, fileName)
+    // basename, so a name can never climb out of the log directory: rotate()
+    // deletes and renames around this path, and only the caller's own
+    // generations may ever be in reach.
+    this.path = join(directory, basename(fileName))
   }
 
   /** Append one entry, rotating first when this write would pass the cap. */
