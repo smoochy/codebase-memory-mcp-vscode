@@ -14,3 +14,7 @@ tsconfig*.json
 # should ever be packaged. The src/ and test/ rules cover today's layout;
 # this catches a stray .ts added at the root later.
 **/*.ts
+# Developer tooling; nothing in dist/ requires it.
+scripts/**
+# Repository metadata, meaningless inside an installed extension.
+.gitignore

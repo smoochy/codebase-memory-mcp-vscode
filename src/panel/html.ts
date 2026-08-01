@@ -264,11 +264,11 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
         '</div>' +
         '<span class="card-tools">' +
         // Re-running the index for one project, without touching the others.
-        `<button class="remove" title="Reindex this repository now. Rescans its files and ` +
+        `<button class="card-tool" title="Reindex this repository now. Rescans its files and ` +
         `rebuilds its part of the graph; nothing else is touched." ` +
         `aria-label="Reindex ${name}" ` +
         `data-command="betterCmm.reindexProject" data-project="${name}">${icon('reindex')}</button>` +
-        `<button class="remove" title="Remove from index" aria-label="Remove ${name} from the index" ` +
+        `<button class="card-tool danger" title="Remove from index" aria-label="Remove ${name} from the index" ` +
         `data-command="betterCmm.removeProject" data-project="${name}">${icon('trash')}</button>` +
         '</span>' +
         '</div>' +
@@ -858,19 +858,26 @@ section h2 {
 .card-text { flex: 1; min-width: 0; }
 .card-name { font-size: 12px; font-weight: 700; line-height: 1.3; word-break: break-word; }
 .card-path { margin-top: 1px; font-size: 10px; color: var(--muted); word-break: break-all; }
-.remove {
+.card-tool {
   flex-shrink: 0; padding: 3px; cursor: pointer; opacity: 0;
   color: var(--muted); background: none;
   border: 1px solid transparent; border-radius: 4px;
   transition: opacity .12s ease, color .12s ease, background .12s ease;
 }
-.card:hover .remove { opacity: .65; }
-.remove:hover, .remove:focus-visible {
-  opacity: 1; color: var(--err);
+.card:hover .card-tool { opacity: .65; }
+/* Reindex is not destructive, so it hovers in the accent colour. Only the
+   remove button carries the red, which is what makes the red mean something. */
+.card-tool:hover, .card-tool:focus-visible {
+  opacity: 1; color: var(--accent);
+  background: rgba(var(--accent-rgb), .10);
+  border-color: rgba(var(--accent-rgb), .28);
+}
+.card-tool.danger:hover, .card-tool.danger:focus-visible {
+  color: var(--err);
   background: rgba(var(--err-rgb), .10);
   border-color: rgba(var(--err-rgb), .28);
 }
-.remove .icon { width: 14px; height: 14px; opacity: 1; }
+.card-tool .icon { width: 14px; height: 14px; opacity: 1; }
 .card-stats {
   display: flex; align-items: center; gap: 5px;
   margin-top: 6px; font-size: 11px; color: var(--muted);

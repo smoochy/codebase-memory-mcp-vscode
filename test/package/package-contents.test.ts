@@ -30,6 +30,20 @@ describe('packaged contents', () => {
     assert.ok(!files.some((f) => f.startsWith('node_modules/')))
   })
 
+  // The check above named three directories and therefore missed the fourth
+  // the moment it appeared: scripts/ shipped inside the installed extension
+  // until vsce ls was actually read.
+  it('excludes developer tooling', () => {
+    assert.ok(!files.some((f) => f.startsWith('scripts/')), `packaged: ${files.join(', ')}`)
+  })
+
+  it('ships only the runtime bundle, the manifest and documentation', () => {
+    // Anything outside these is either a mistake or wants a deliberate rule.
+    const allowed = /^(dist\/|media\/|package\.json$|readme\.md$|changelog\.md$|LICENSE|docs\/)/i
+    const unexpected = files.filter((f) => !allowed.test(f))
+    assert.deepEqual(unexpected, [], 'unexpected files in the package')
+  })
+
   it('ships no binary, since the extension downloads it at runtime', () => {
     assert.ok(!files.some((f) => /codebase-memory-mcp(\.exe)?$/.test(f)))
   })

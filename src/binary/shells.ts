@@ -10,7 +10,14 @@ export function engineStoreDirectory(home: string): string {
  * the CLI reports counts and git revisions but no timestamp. The `-wal` and
  * `-shm` siblings move on every read, so only the `.db` itself is meaningful.
  */
-export function projectStorePath(home: string, projectName: string): string {
+export function projectStorePath(home: string, projectName: string): string | null {
+  // The name comes from CLI output and is interpolated into a path, so a
+  // separator or a traversal segment in it would point the lookup somewhere
+  // else entirely. Only a plain file-name shape is accepted; anything else
+  // yields null and the caller simply reports no timestamp.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(projectName) || projectName.includes('..')) {
+    return null
+  }
   return `${engineStoreDirectory(home)}/${projectName}.db`
 }
 

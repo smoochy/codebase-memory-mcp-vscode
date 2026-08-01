@@ -551,7 +551,7 @@ describe('renderBody', () => {
     // Extract the remove button's opening tag and confirm it parses as
     // exactly one element with exactly one data-project attribute value
     // that round-trips to the original hostile string once unescaped.
-    const buttonMatch = /<button class="remove"[^>]*>/.exec(html)
+    const buttonMatch = /<button[^>]*data-command="betterCmm.removeProject"[^>]*>/.exec(html)
     assert.ok(buttonMatch, 'expected a remove button in the output')
     const tag = buttonMatch[0]
 
@@ -573,7 +573,7 @@ describe('renderBody', () => {
   it('cannot break out of the data-project attribute with a single quote or backtick', () => {
     const hostileName = `'`+'`'+`onmouseover=alert(1)`
     const html = renderBody(model({ projects: [{ name: hostileName, root_path: '/x' }] }), 'n1')
-    const buttonMatch = /<button class="remove"[^>]*>/.exec(html)
+    const buttonMatch = /<button[^>]*data-command="betterCmm.removeProject"[^>]*>/.exec(html)
     assert.ok(buttonMatch)
     const tag = buttonMatch[0]
     // Exactly one data-project attribute, still a single well-formed tag -

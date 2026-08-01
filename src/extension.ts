@@ -248,9 +248,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       // cheap enough price on a timer; asking the CLI would mean one process
       // launch each.
       projects = (result.ok ? result.value : []).map((project) => {
+        const store = projectStorePath(homedir(), project.name)
+        if (store === null) {
+          return project
+        }
         try {
-          const at = statSync(projectStorePath(homedir(), project.name)).mtimeMs
-          return { ...project, indexed_at_ms: at }
+          return { ...project, indexed_at_ms: statSync(store).mtimeMs }
         } catch {
           return project
         }
@@ -718,11 +721,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       try {
         entries = readdirSync(directory)
           .filter((name) => name.endsWith('.log'))
-          .map((name) => {
+          .flatMap((name) => {
             const full = join(directory, name)
-            const stats = statSync(full)
+            let stats
+            try {
+              stats = statSync(full)
+            } catch {
+              // Rotated away between the listing and the stat; skip just this one.
+              return []
+            }
             const worker = name.startsWith('.worker-')
-            return {
+            return [{
               label: name,
               description: `${formatBytes(stats.size)}, ${stats.mtime.toLocaleString()}`,
               path: full,
@@ -731,11 +740,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
               // Client sessions first: a worker file only exists to capture a
               // crash, and is empty when there was none.
               group: worker ? 'Indexing workers' : 'Client sessions',
-            }
+            }]
           })
           // Empty files are noise: they are workers that exited cleanly.
           .filter((entry) => entry.size > 0)
-          .sort((a, b) => (a.group === b.group ? b.at - a.at : a.group < b.group ? 1 : -1))
+          .sort((a, b) => (a.group === b.group ? b.at - a.at : a.group < b.group ? -1 : 1))
       } catch (cause) {
         debug(`engine log directory unreadable: ${cause instanceof Error ? cause.message : ''}`)
       }
