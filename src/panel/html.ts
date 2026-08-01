@@ -176,7 +176,7 @@ function progressLabel(percent: number): string {
 function updateHint(version: string): string {
   const tip =
     `codebase-memory-mcp ${version} is available. This binary is managed ` +
-    'outside the extension, so update it yourself.'
+    'outside the extension, so you need to update it yourself.'
   return (
     `<div class="action warning hint" title="${escapeHtml(tip)}">` +
     `${icon('arrowUp')}<span>${escapeHtml(`${version} available`)}</span>` +

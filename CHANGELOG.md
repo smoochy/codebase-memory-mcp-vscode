@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.6]
+
+- The activity bar count now also appears for a binary the extension does not
+  manage. It will not install that update, but its owner still wants to know
+  one exists; the tooltip says whose job it is.
+- Finding a newer release is written to the log once, as debug detail, rather
+  than on every poll or not at all. A second line is only written after the
+  offer has gone away and a new one appears.
+- This file now carries every version that was ever built, not only the recent
+  ones, and the README describes what the extension has grown into.
+
 ## [0.9.5]
 
 - Once the download is done the update button says "Installing..." rather than
@@ -81,6 +92,270 @@ project it has never indexed makes no claim in either direction.
   distinguishable.
 - A manual reindex writes one log line naming who asked, the repository, and the
   result, instead of two.
+
+## [0.8.1]
+
+- A malformed `betterCmm.dateLocale` value (for example "de_DE" with an
+  underscore) used to throw inside the unhandled refresh timer, so a typo in
+  that one cosmetic setting silently stopped the panel from updating at all.
+  It now falls back to the host's own date formatting instead.
+
+## [0.8.0]
+
+- Project cards now carry an "outdated" marker when the CLI's reported
+  `base_sha` (the commit the index was built from) differs from `head_sha`
+  (the commit the checkout is currently on), making a stale index visible
+  without comparing two hashes by hand.
+- Absolute timestamps followed VS Code's own display language rather than
+  the operating system's regional format, so an English-language VS Code
+  showed American-style dates on a German machine. The new
+  `betterCmm.dateLocale` setting overrides it; left empty, behaviour is
+  unchanged.
+- Relative times now carry minutes past the hour ("5h 24m ago" rather than
+  "5h ago"), and a reindex report states the delta and says "unchanged"
+  outright rather than leaving the reader to compare two counts.
+
+## [0.7.1]
+
+- Fixed a styling bug where a bare `.danger` rule also matched the project
+  card's remove button, lending it the uninstall section's red top border
+  and margin; the remove and reindex buttons no longer sit on different
+  baselines.
+- A non-numeric `refreshIntervalSeconds` bypassed the clamping used
+  elsewhere and made the refresh timer fire roughly every millisecond,
+  spawning two CLI processes per tick for as long as the panel stayed open.
+  It is clamped now, and the "reload required" hint no longer fires on
+  every settings change by comparing a snapshot against itself.
+
+## [0.7.0]
+
+- Project cards are more compact: the index time now sits on the stats line
+  rather than a separate row, and the layout survives a narrow sidebar
+  instead of breaking - names and paths ellipsize on one line, the stats
+  line wraps, and the header no longer collides with the status chip.
+- Reindexing an unchanged project used to report "finished" with nothing
+  visibly different; indexing is incremental, so a no-op leaves the store
+  file - and its timestamp - untouched. The counts the CLI reports are now
+  shown and logged, so a no-op reads as one instead of looking broken.
+- Extension settings changes, not only CLI settings, are now logged with
+  their before and after values.
+
+## [0.6.1]
+
+- Fixed four defects found in review: a development script
+  (scripts/install-local.mjs) was being packaged into the shipped
+  extension; the engine-log list sorted client sessions after workers,
+  contradicting its own intent; a single engine log file rotating away
+  mid-listing aborted the whole list instead of skipping just that entry;
+  and the per-project reindex button inherited the remove button's red
+  destructive-hover styling.
+
+## [0.6.0]
+
+- Each project card gains its own Reindex button, alongside the existing
+  Reindex all, and a line showing when its index was last built - read from
+  the store file's own mtime, since the CLI reports no timestamp itself.
+- Setting-change log lines now record who changed what and both the old and
+  new value, instead of only naming the command that was clicked.
+- Engine logs are grouped and empty, zero-byte files are dropped from the
+  list, since the CLI writes one such file per client session and per
+  indexing worker and most carry nothing.
+
+## [0.5.1]
+
+- Hand-edited, non-numeric `logMaxSizeMb` or `logKeptFiles` settings used to
+  arrive as NaN, silently disabling log rotation for the life of the
+  installation; these values are now coerced, range-checked and rounded
+  when read.
+- Opening an engine log had no error handling, so a log too large for the
+  editor, or one rotated away between picking it and opening it, failed
+  silently. It now reports the failure.
+- Added a Clear Extension Log command, and the engine-log picker now states
+  plainly that those files come straight from the CLI and pass through no
+  redaction.
+
+## [0.5.0]
+
+- The extension log lived in a directory VS Code recreates for every window
+  session, so the log explaining a crash was gone by the time anyone went
+  looking for it. It now persists in global storage, bounded by rotation
+  settings (`betterCmm.logMaxSizeMb`, `betterCmm.logKeptFiles`) that
+  previously did nothing.
+- The log level setting was declared but ignored, and every entry was
+  written at info regardless; levels are honoured now, with debug recording
+  every panel action.
+- Added a second logs action for the engine's own logs - one file per
+  connected client and one per indexing worker - listed newest first with
+  size and timestamp.
+
+## [0.4.1]
+
+- Ownership of an installed binary is now decided by a record written at
+  install time, not by its location. Previously, since the CLI's own
+  installer and the extension both target `~/.local/bin`, a binary a user
+  had installed themselves could be silently treated as the extension's
+  own - offered for update, overwritten, and offered for deletion -
+  contradicting the extension's own stated rule that it never touches an
+  installation it does not own.
+- Updating a binary now stages the new file beside the target and renames
+  it into place, rather than writing straight onto the live executable,
+  which could leave a truncated or partial binary behind if the update was
+  interrupted.
+
+## [0.4.0]
+
+- The managed binary is now installed straight onto PATH (`~/.local/bin`),
+  matching where the CLI itself registers the MCP server entry. The
+  previous approach - extension storage plus a launcher shim on PATH - meant
+  the registered path and the running binary never matched, so the MCP
+  server never actually started. The shim is gone, along with the code that
+  wrote and deleted it.
+
+## [0.3.1]
+
+- Hardened the PATH launcher against a planted or dangling symlink at its
+  own name: creating it now refuses to follow a symlink at all, closing a
+  path where an attacker-controlled file could have been created and marked
+  executable.
+- Setup no longer removes a pre-existing binary at `~/.local/bin`; whether
+  one was already present is now checked before installing, so a copy the
+  user placed there themselves is never silently deleted.
+- Fixed incomplete shell-quoting in the generated uninstall command on both
+  Windows and POSIX shells.
+
+## [0.3.0]
+
+- After registering the MCP server, the extension now replaces the CLI's
+  own ~36 MB copy on PATH with a small launcher pointing at the managed
+  install, so the two no longer drift apart as either is updated.
+- The uninstall command is now offered for both PowerShell and Git Bash on
+  Windows, since one spelling cannot serve both shells; the Git Bash line
+  only appears when a Git Bash installation was actually found.
+- The settings screen's `ui-lang` setting is now a dropdown built from the
+  CLI's own description text, rather than a hardcoded list of choices.
+
+## [0.2.1]
+
+- The refresh timer used to replace the whole settings screen every thirty
+  seconds, discarding anything typed into a field mid-edit; polling now
+  pauses while a full-screen view is open.
+- Config keys are now validated to look like identifiers before being
+  accepted, closing a path where a value such as `--config-file` could
+  enter the write allowlist and then be used as the first argument to
+  `config set`.
+
+## [0.2.0]
+
+- Added a settings screen inside the panel exposing the CLI's own
+  configuration keys, discovered at runtime via `config list`, since VS
+  Code's settings UI can only render statically declared settings and could
+  never show them.
+- The CLI version shown in the header is now a clickable button that copies
+  the binary's folder path, and a note now explains that registering the
+  MCP server only takes effect after the host restarts.
+- Project cards now title on the folder name rather than the CLI's
+  hyphenated internal name, and show the parent folder instead of
+  repeating the full path.
+
+## [0.1.9]
+
+- Hardened the copied uninstall command against path injection: it is now
+  rejected outright if it contains a quote, backtick, dollar sign or line
+  break, and `betterCmm.externalBinaryPath` and `binarySource` are now
+  machine-scoped rather than settable per workspace, so a repository could
+  no longer choose which binary the extension runs by shipping a hostile
+  `.vscode/settings.json`.
+- The uninstall command now runs correctly in PowerShell, the default
+  terminal on Windows, which requires the call operator (`&`) that other
+  shells reject in that position.
+
+## [0.1.8]
+
+- Setup now downloads the binary and registers it as an MCP server in a
+  single click; previously the registration step had to be run manually
+  afterwards, despite the panel describing Setup as doing both.
+- Added an inline uninstall screen explaining what the uninstall command
+  does and why it has to be run manually, showing the command as selectable
+  text with copy and cancel actions, instead of silently copying it to the
+  clipboard.
+- The copied uninstall command is now bound to the extension's own resolved
+  binary path rather than the bare CLI name, which only worked when the CLI
+  happened to already be on PATH.
+
+## [0.1.7]
+
+- Hardened the new log file: a lone carriage return in untrusted process
+  output could start a line at column zero and pass for a genuine log entry
+  when the file is later read as evidence, so all line-break forms are
+  escaped now. A single oversized entry is capped rather than allowed to
+  consume the whole rotation budget, and secret redaction now also matches
+  password, secret, credential and private_key, not only token and
+  api_key.
+
+## [0.1.6]
+
+- The Setup screen's "Install binary" button is renamed "Setup" and now
+  names both of its steps and links the release it downloads, neither of
+  which was explained before.
+- "View logs" now opens a persisted log file in an editor, honouring the
+  rotation settings the code already contained but nothing had ever called;
+  previously the only log lived in memory and was lost when the window
+  closed.
+- The CLI uninstall command, previously unreachable from the UI at all, is
+  now in the view title menu.
+
+## [0.1.5]
+
+- Fixed a defect that could freeze the panel permanently: project
+  node/edge/size counts from the CLI were cast without validation, and a
+  malformed value could throw during rendering inside the refresh timer,
+  which has no error handler, leaving the panel stuck on stale data
+  forever. Counts are now normalised at the point the untyped CLI payload
+  is parsed.
+
+## [0.1.4]
+
+- Fixed adding repositories doing nothing: the extension passed `--path`
+  where the CLI expects `--repo-path`, an unrecognised flag the CLI
+  silently ignored by falling back to indexing its own working directory,
+  which then crashed.
+- Added the panel actions the original specification called for but which
+  were missing entirely: a settings gear and refresh in the view title
+  bar, a Reindex action, a Setup action, a Projects count tile, and project
+  cards showing size and git branch.
+
+## [0.1.3]
+
+- Fixed every CLI call hanging until it timed out and returning nothing:
+  the child process's stdin was left open, and the wrapped binary waits for
+  input on stdin before responding. This, more than the envelope-parsing
+  fix in the previous release, was the real cause of refreshing and adding
+  repositories appearing to do nothing.
+- Hardened the response parsing so a malformed CLI payload - null, wrong
+  types, unstringifiable values - can no longer throw inside the unhandled
+  refresh timer and break the panel.
+
+## [0.1.2]
+
+- Fixed the panel always showing no projects: every CLI response is
+  wrapped in an MCP tool-result envelope, and the code was returning that
+  envelope itself as the data rather than unwrapping it.
+- Errors from a crashed indexing run were being parsed as an empty success,
+  so failures were invisible; they now surface through a notification, an
+  error message offering "View logs", and the output channel.
+- Clicks landing on a button's inline icon were being dropped, since the
+  click handler only recognised HTMLElement targets and an inline SVG is an
+  SVGElement.
+
+## [0.1.1]
+
+- Fixed the packaged extension shipping a stale bundle built before the
+  panel rewrite, so installing it showed the old unstyled UI even though
+  every test passed: there was no `vscode:prepublish` script, so packaging
+  never rebuilt `dist/` before bundling it.
+- Fixed integration tests failing before any test ran when
+  `ELECTRON_RUN_AS_NODE` was set in the environment, which made the VS Code
+  test host run as plain Node and reject its own command-line flags.
 
 ## [0.1.0]
 

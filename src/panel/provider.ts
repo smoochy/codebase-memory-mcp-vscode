@@ -172,14 +172,21 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   /**
    * The count on the activity bar icon.
    *
-   * Only what the user has to act on, which today is one thing: an engine
-   * update waiting to be installed. Without it the panel has to be opened to
-   * learn there is anything to do at all.
+   * Only what the user has to act on, which today is one thing: a newer engine
+   * release. Without it the panel has to be opened to learn there is anything
+   * to do at all. It counts for an external binary too - the extension will
+   * not install that one, but its owner still wants to know.
    */
   private badgeFor(model: PanelModel): vscode.ViewBadge | undefined {
-    if (!allowedActions(model.state).showUpdateButton || model.updateAvailable === null) {
+    if (model.updateAvailable === null) {
       return undefined
     }
-    return { value: 1, tooltip: `Codebase Memory ${model.updateAvailable} is available` }
+    const own = allowedActions(model.state).showUpdateButton
+    return {
+      value: 1,
+      tooltip:
+        `Codebase Memory ${model.updateAvailable} is available` +
+        (own ? '' : ' (this binary is yours to update)'),
+    }
   }
 }

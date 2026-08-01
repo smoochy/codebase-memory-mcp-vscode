@@ -415,6 +415,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     panel.updateCliSettings(cliSettings)
   }
 
+  // The refresh loop asks about releases every thirty seconds; the answer is
+  // worth one line, not one line per poll. Reset when the offer goes away, so
+  // an update taken and a later one found are two separate records.
+  let updateLogged = false
+
   const refresh = async (): Promise<void> => {
     const state = resolveState(storageDir, ownedInstallPath())
     let version: string | null = null
@@ -498,6 +503,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           checkForUpdates,
         })
       }
+    }
+
+    if (updateAvailable === null) {
+      updateLogged = false
+    } else if (!updateLogged) {
+      updateLogged = true
+      debug(
+        `update available: ${updateAvailable} (installed ${version ?? 'unknown'}, ` +
+          `${state.effectiveSource ?? 'unresolved'} binary)`,
+      )
     }
 
     debug(
