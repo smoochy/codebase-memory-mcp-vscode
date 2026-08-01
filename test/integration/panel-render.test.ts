@@ -110,9 +110,24 @@ describe('panel renders in a real extension host', () => {
     const commands = title.map((entry) => entry.command)
     assert.ok(commands.includes('betterCmm.openSettings'), 'no settings gear in the title bar')
     assert.ok(commands.includes('betterCmm.refresh'), 'no refresh in the title bar')
+    // The CLI uninstall workflow has to be reachable from the UI; it existed
+    // as a command but nothing surfaced it.
+    assert.ok(
+      commands.includes('betterCmm.copyUninstallCommand'),
+      'no CLI uninstall entry in the title bar menu',
+    )
     for (const entry of title) {
       assert.equal(entry.when, 'view == betterCmm.panel')
     }
+  })
+
+  it('opens the log file itself, not just the output channel', async function () {
+    this.timeout(30_000)
+    await vscode.commands.executeCommand('betterCmm.showLogs')
+    // The log is written on the first refresh, so by now it exists and the
+    // command must have put it in an editor rather than revealing a panel.
+    const open = vscode.window.activeTextEditor?.document.uri.fsPath ?? ''
+    assert.match(open, /better-cmm\.log$/)
   })
 
   it('renders the rebuilt structure rather than the old flat list', () => {

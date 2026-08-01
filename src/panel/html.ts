@@ -1,3 +1,4 @@
+import { latestReleaseUrl } from '../binary/assets'
 import type { ProjectSummary } from '../cli/client'
 import { allowedActions, type ExtensionState } from '../state/machine'
 
@@ -148,6 +149,32 @@ function statusChip(state: ExtensionState): string {
   return `<span class="chip ${tone}"><span class="chip-dot"></span>${escapeHtml(label)}</span>`
 }
 
+/**
+ * The two versions in the sub-title: the CLI's, then this extension's.
+ *
+ * The CLI version carries the binary's path as its tooltip. That is the only
+ * place the path appears now — a full path is too long for a panel this narrow
+ * and was previously truncated into uselessness on its own row.
+ */
+function subVersions(model: PanelModel): string {
+  const parts: string[] = []
+
+  if (model.version !== null) {
+    const path = model.state.activePath
+    const hint =
+      path === null
+        ? 'Path unknown'
+        : `${path}${model.state.effectiveSource === null ? '' : ` (${model.state.effectiveSource})`}`
+    parts.push(`<span class="ver" title="${escapeHtml(hint)}">v${escapeHtml(model.version)}</span>`)
+  }
+
+  if (model.extensionVersion !== null && model.extensionVersion !== undefined) {
+    parts.push(`<span class="nowrap">VSC Extension · v${escapeHtml(model.extensionVersion)}</span>`)
+  }
+
+  return parts.length === 0 ? '' : ` · ${parts.join(' · ')}`
+}
+
 function header(model: PanelModel): string {
   return (
     '<header>' +
@@ -161,14 +188,7 @@ function header(model: PanelModel): string {
     '</span>' +
     '<span class="brand-text">' +
     '<span class="brand-name">Codebase Memory</span>' +
-    // The extension's own version, distinct from the binary version shown in
-    // the bar below — without it there is no way to tell which build is
-    // installed.
-    `<span class="brand-sub">Knowledge Graph Engine${
-      model.extensionVersion === null || model.extensionVersion === undefined
-        ? ''
-        : ` · v${escapeHtml(model.extensionVersion)}`
-    }</span>` +
+    `<span class="brand-sub">Knowledge Graph Engine${subVersions(model)}</span>` +
     '</span>' +
     '</div>' +
     statusChip(model.state) +
@@ -176,19 +196,18 @@ function header(model: PanelModel): string {
   )
 }
 
+/**
+ * Only the missing-binary warning now.
+ *
+ * The version and path row it used to render is gone: the version sits in the
+ * sub-title and the path is that version's tooltip, so repeating either here
+ * would just cost a line of a narrow panel.
+ */
 function binaryBar(model: PanelModel): string {
-  const { state } = model
-  if (state.kind === 'needs-setup') {
-    return '<div class="bar"><span class="tag err">!</span>No binary found — run setup to get started</div>'
+  if (model.state.kind !== 'needs-setup') {
+    return ''
   }
-  const tag =
-    model.version === null
-      ? '<span class="tag">?</span>'
-      : `<span class="tag ok">v${escapeHtml(model.version)}</span>`
-  return (
-    `<div class="bar">${tag}<span class="bar-text" title="${escapeHtml(state.activePath ?? '')}">` +
-    `${escapeHtml(state.activePath ?? '')}</span></div>`
-  )
+  return '<div class="bar"><span class="tag err">!</span>No binary found — run setup to get started</div>'
 }
 
 function projectCards(projects: ProjectSummary[], loading: boolean): string {
@@ -267,10 +286,18 @@ export function renderBody(model: PanelModel, nonce: string): string {
   const parts: string[] = [header(model), binaryBar(model)]
 
   if (state.kind === 'needs-setup') {
+    // Both steps are named before the button is pressed. "Install binary" said
+    // nothing about where the download comes from or that an MCP entry gets
+    // written, so the release it fetches is linked right here.
     parts.push(
       section(
         'Actions',
-        `<div class="actions">${button('betterCmm.runSetup', 'Install binary', 'download', 'primary')}</div>`,
+        `<div class="actions">${button('betterCmm.runSetup', 'Setup', 'download', 'primary')}</div>` +
+          '<ul class="steps">' +
+          '<li>Installs the binary from the ' +
+          `<a href="${escapeHtml(latestReleaseUrl())}">latest upstream release</a></li>` +
+          '<li>Registers it as an MCP server</li>' +
+          '</ul>',
       ),
     )
     return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -318,7 +345,6 @@ export function renderBody(model: PanelModel, nonce: string): string {
   }
   buttons.push(button('betterCmm.refresh', 'Refresh', 'refresh'))
   buttons.push(button('betterCmm.showLogs', 'View logs', 'logs'))
-  buttons.push(button('betterCmm.runSetup', 'Setup', 'download'))
 
   parts.push(section('Actions', `<div class="actions">${buttons.join('')}</div>`))
   parts.push(section('Projects', projectCards(model.projects, loading)))
@@ -397,6 +423,15 @@ header {
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
 .brand-name { font-size: 13px; font-weight: 700; line-height: 1.25; }
 .brand-sub { font-size: 10px; color: var(--muted); }
+/* The dotted underline is the only cue that this version carries the path. */
+.ver { border-bottom: 1px dotted currentColor; cursor: help; }
+/* The sub-title wraps in a narrow sidebar; each label stays whole when it does. */
+.nowrap { white-space: nowrap; }
+.steps {
+  margin: 8px 0 0; padding: 0 12px 0 26px; list-style: disc;
+  font-size: 11px; color: var(--muted); line-height: 1.6;
+}
+.steps a { color: var(--accent); }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;

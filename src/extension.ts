@@ -6,6 +6,7 @@ import { installLatest, installRelease, refusesManagedInstall, type InstallDeps 
 import { CliClient, type ProjectSummary } from './cli/client'
 import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, UNINSTALL_COMMAND } from './constants'
+import { LogFile } from './log-file'
 import { redactSecrets } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
 import { PanelProvider } from './panel/provider'
@@ -91,11 +92,23 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     void vscode.commands.executeCommand(command, project)
   }, extensionVersion)
 
+  // context.logUri is VS Code's own per-extension log directory, so the file
+  // sits where a user already looks for extension logs and gets cleaned up with
+  // the rest of them.
+  const logFile = new LogFile(context.logUri.fsPath)
+
   const log = (message: string): void => {
     // Anything derived from a URL, header or process output goes through the
     // redactor before it can land in a log the user pastes into an issue.
-    channel.appendLine(redactSecrets(message))
+    const safe = redactSecrets(message)
+    channel.appendLine(safe)
+    logFile.append('info', safe, new Date().toISOString())
   }
+
+  // One line on every activation, so a log a user attaches to a bug report
+  // always states which build produced it — and so the file exists before
+  // anything goes wrong.
+  log(`activated, extension v${extensionVersion ?? 'unknown'}`)
 
   const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
 
@@ -330,7 +343,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           'View logs',
         ).then((choice) => {
           if (choice === 'View logs') {
-            channel.show()
+            void vscode.commands.executeCommand('betterCmm.showLogs')
           }
         })
       }
@@ -361,11 +374,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refresh()
     },
     'betterCmm.refresh': refresh,
-    // preserveFocus false, so the panel actually comes forward. Without it a
-    // click on "View logs" can leave the output view behind whatever is
-    // already showing, which reads as the button doing nothing.
-    'betterCmm.showLogs': () => {
-      channel.show(false)
+    // Opens the log file itself, not the output panel: a file can be scrolled,
+    // searched, and attached to a bug report, and it survives a window reload.
+    // Falls back to the channel when nothing has been written yet.
+    'betterCmm.showLogs': async () => {
+      try {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile.path))
+        await vscode.window.showTextDocument(document, { preview: false })
+      } catch {
+        channel.show(false)
+      }
     },
     'betterCmm.openSettings': async () => {
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
@@ -401,7 +419,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           )
           .then((choice) => {
             if (choice === 'View logs') {
-              channel.show(false)
+              void vscode.commands.executeCommand('betterCmm.showLogs')
             }
           })
       }
