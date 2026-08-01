@@ -880,7 +880,11 @@ section h2 {
   margin-top: 1px; font-size: 10px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Fixed box rather than shrink-to-fit: the two icons have different intrinsic
+   heights, which left the buttons on visibly different baselines. */
 .card-tool {
+  width: 22px; height: 22px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; padding: 3px; cursor: pointer; opacity: 0;
   color: var(--muted); background: none;
   border: 1px solid transparent; border-radius: 4px;
@@ -905,6 +909,10 @@ section h2 {
   margin-top: 5px; font-size: 11px; color: var(--muted);
 }
 .card-stats em { font-style: normal; opacity: .7; }
+/* The index time carries the same store icon as the reindex button. Sized to
+   the 11px row rather than the 15px default, or it stretches the line. */
+.indexed { display: inline-flex; align-items: center; gap: 3px; cursor: help; }
+.indexed .icon { width: 11px; height: 11px; opacity: .75; }
 .card-stats .sep { opacity: .35; }
 .card-age { margin-top: 4px; font-size: 10px; color: var(--muted); }
 /* An index behind its working tree is worth noticing, not alarming. */
@@ -944,11 +952,11 @@ button.ver {
 /* The destructive section is set apart rather than sitting in the same list. */
 /* Full-width so the children keep the same 12px gutter as every other
    section; the rule only adds the separating line above it. */
-.danger {
+section.danger {
   margin-top: 14px; padding-top: 12px;
   border-top: 1px solid rgba(var(--err-rgb), .35);
 }
-.danger h2 { color: var(--err); }
+section.danger h2 { color: var(--err); }
 .action.danger { color: var(--err); }
 .action.danger:hover { background: rgba(var(--err-rgb), .12); }
 .skeleton { display: flex; flex-direction: column; gap: 7px; }

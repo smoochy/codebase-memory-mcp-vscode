@@ -60,7 +60,7 @@ function indexReport(payload: unknown): string {
     parts.push(`${record.edges.toLocaleString('en-US')} edges`)
   }
   if (typeof record.skipped_count === 'number' && record.skipped_count > 0) {
-    parts.push(`${String(record.skipped_count)} skipped`)
+    parts.push(`${record.skipped_count.toLocaleString('en-US')} skipped`)
   }
   return parts.length === 0 ? 'done' : parts.join(', ')
 }
@@ -229,7 +229,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'logKeptFiles',
   ] as const
   const snapshotSettings = (): Map<string, string> =>
-    new Map(watchedSettings.map((key) => [key, JSON.stringify(setting<unknown>(key, null))]))
+    new Map(
+      watchedSettings.map((key) => [
+        key,
+        (JSON.stringify(setting<unknown>(key, null)) ?? 'null').slice(0, 200),
+      ]),
+    )
   let previousSettings = snapshotSettings()
 
   context.subscriptions.push(
@@ -238,16 +243,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return
       }
       const current = snapshotSettings()
+      const before = previousSettings
+      previousSettings = current
       for (const [key, value] of current) {
-        const before = previousSettings.get(key)
-        if (before !== value) {
-          log(`User: extension setting ${key} ${before ?? 'unset'} -> ${value}`)
+        const was = before.get(key)
+        if (was !== value) {
+          log(`User: extension setting ${key} ${was ?? 'unset'} -> ${value}`)
         }
       }
-      previousSettings = current
       // The log file's own limits are read once at construction, so a change
       // to them needs saying out loud rather than appearing not to work.
-      if (current.get('logMaxSizeMb') !== undefined || current.get('logKeptFiles') !== undefined) {
+      if (
+        current.get('logMaxSizeMb') !== before.get('logMaxSizeMb') ||
+        current.get('logKeptFiles') !== before.get('logKeptFiles')
+      ) {
         debug('log size settings take effect after the window is reloaded')
       }
       void refresh()
@@ -942,7 +951,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
   // Polling only, no FileSystemWatcher: the CLI watches files itself.
   if (setting('autoRefresh', true)) {
-    const seconds = Math.max(5, setting('refreshIntervalSeconds', 30))
+    const seconds = numberSetting('refreshIntervalSeconds', 30, 5, 3600)
     refreshTimer = setInterval(() => {
       if (panel.isVisible && !panel.isOnSubScreen) {
         void refresh()
