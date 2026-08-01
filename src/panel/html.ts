@@ -349,13 +349,23 @@ export function absoluteTimeLabel(atMs: number, locale?: string): string {
   // language rather than the operating system's regional format - an English
   // VS Code on a German machine formats as en-US. The caller passes what the
   // user actually wants; undefined falls back to the host's guess.
-  return new Date(atMs).toLocaleString(locale === undefined || locale === '' ? undefined : locale, {
+  const options: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  })
+  }
+  const wanted = locale === undefined || locale.trim() === '' ? undefined : locale.trim()
+  try {
+    return new Date(atMs).toLocaleString(wanted, options)
+  } catch {
+    // toLocaleString throws RangeError on a malformed language tag, and this
+    // one is free text from a settings field - "de_DE" with an underscore is
+    // the obvious typo and throws. Falling back keeps a mistyped setting from
+    // taking down the whole render inside the refresh timer.
+    return new Date(atMs).toLocaleString(undefined, options)
+  }
 }
 
 /**

@@ -131,6 +131,22 @@ describe('absoluteTimeLabel', () => {
     assert.match(label, /\d{1,2}[.\/-]\d{1,2}/)
     assert.match(label, /\d{1,2}:\d{2}/)
   })
+
+  it('honours an explicit locale', () => {
+    const at = Date.UTC(2026, 7, 1, 12, 31)
+    assert.match(absoluteTimeLabel(at, 'de-DE'), /01\.08\.2026/)
+    assert.match(absoluteTimeLabel(at, 'en-US'), /08\/01\/2026/)
+  })
+
+  // The setting is free text, and toLocaleString throws RangeError on a
+  // malformed tag - "de_DE" with an underscore is the obvious typo. A throw
+  // here would land in the refresh timer, which has no handler.
+  for (const bad of ['de_DE', 'nonsense!!', '   ', 'xx-YY-ZZ-!!']) {
+    it(`falls back rather than throwing on "${bad}"`, () => {
+      assert.doesNotThrow(() => absoluteTimeLabel(Date.UTC(2026, 7, 1, 12, 31), bad))
+      assert.match(absoluteTimeLabel(Date.UTC(2026, 7, 1, 12, 31), bad), /2026/)
+    })
+  }
 })
 
 describe('renderBody', () => {
