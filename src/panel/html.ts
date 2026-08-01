@@ -31,6 +31,8 @@ export interface PanelModel {
   gitBashAvailable?: boolean
   /** True when the extension has its own copy of the binary to remove. */
   managedBinaryPresent?: boolean
+  /** Show index times as a date rather than an age. The other form is the tooltip. */
+  absoluteTime?: boolean
 }
 
 /**
@@ -234,7 +236,7 @@ function binaryBar(model: PanelModel): string {
   return '<div class="bar"><span class="tag err">!</span>No binary found - run setup to get started</div>'
 }
 
-function projectCards(projects: ProjectSummary[], loading: boolean): string {
+function projectCards(projects: ProjectSummary[], loading: boolean, absoluteTime: boolean): string {
   if (loading) {
     // Three placeholder bars, so the panel has its final shape before the CLI
     // answers rather than appearing empty and broken.
@@ -283,11 +285,11 @@ function projectCards(projects: ProjectSummary[], loading: boolean): string {
           ? ''
           : '<span class="sep">·</span>' +
             `<span>${escapeHtml(formatBytes(project.size_bytes))}</span>`) +
+        indexedAt(project, absoluteTime) +
         (typeof project.git?.branch === 'string' && project.git.branch.length > 0
           ? '<span class="sep">·</span>' + branchTag(project.git.branch)
           : '') +
         '</div>' +
-        freshness(project) +
         '</div>'
       )
     })
@@ -304,50 +306,59 @@ function trimmedPath(rootPath: string): string {
   return typeof rootPath === 'string' ? rootPath.replace(/[\\/]+$/, '') : ''
 }
 
-/** Relative age, because "3 hours ago" answers the question a date makes you do arithmetic for. */
+/**
+ * Relative age, because a date makes the reader do the arithmetic.
+ *
+ * Minutes below an hour, hours above it, and hours all the way up - "183h ago"
+ * rather than "7 days ago", because the question this answers is how stale the
+ * index is, and hours compare directly against each other at a glance.
+ */
 export function relativeTime(thenMs: number, nowMs: number): string {
   const seconds = Math.max(0, Math.round((nowMs - thenMs) / 1000))
-  if (seconds < 90) {
+  if (seconds < 60) {
     return 'just now'
   }
-  const steps: [number, string][] = [
-    [60, 'minute'],
-    [3600, 'hour'],
-    [86400, 'day'],
-  ]
-  let unit = 'minute'
-  let size = 60
-  for (const [step, label] of steps) {
-    if (seconds >= step) {
-      unit = label
-      size = step
-    }
-  }
-  const count = Math.round(seconds / size)
-  return `${String(count)} ${unit}${count === 1 ? '' : 's'} ago`
+  const minutes = Math.floor(seconds / 60)
+  return minutes < 60 ? `${String(minutes)}m ago` : `${String(Math.floor(minutes / 60))}h ago`
 }
 
 /**
- * When the index was last built, and whether it still matches the working tree.
+ * Absolute time in the reader's own conventions.
  *
- * The CLI reports no timestamp, so the age comes from the store file it writes
- * per project. Staleness is the more useful half: `detect_changes` counts the
- * files that moved since, which answers "is this current" without the user
- * having to reason about a date.
+ * `toLocaleString` with no locale argument follows the host, so a German user
+ * sees 01.08.2026, 16:40 and an American one 8/1/2026, 4:40 PM, without the
+ * extension deciding which is correct.
  */
-function freshness(project: ProjectSummary): string {
-  const parts: string[] = []
-  if (typeof project.indexed_at_ms === 'number' && Number.isFinite(project.indexed_at_ms)) {
-    parts.push(`indexed ${escapeHtml(relativeTime(project.indexed_at_ms, Date.now()))}`)
+export function absoluteTimeLabel(atMs: number): string {
+  return new Date(atMs).toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/**
+ * When the index was last built, beside the size it belongs to.
+ *
+ * The store icon repeats the one on the reindex button on purpose: both name
+ * the same thing, the stored index. Whichever of the two time formats is not
+ * shown becomes the tooltip, so the other reading is always one hover away.
+ */
+function indexedAt(project: ProjectSummary, absolute: boolean): string {
+  const at = project.indexed_at_ms
+  if (typeof at !== 'number' || !Number.isFinite(at)) {
+    return ''
   }
-  if (typeof project.changed_count === 'number' && project.changed_count > 0) {
-    const files = project.changed_count === 1 ? 'file' : 'files'
-    parts.push(
-      `<span class="stale" title="Reindex to pick these up">` +
-        `${escapeHtml(String(project.changed_count))} ${files} changed since</span>`,
-    )
-  }
-  return parts.length === 0 ? '' : `<div class="card-age">${parts.join(' · ')}</div>`
+  const relative = relativeTime(at, Date.now())
+  const exact = absoluteTimeLabel(at)
+  const [shown, hidden] = absolute ? [exact, relative] : [relative, exact]
+  return (
+    '<span class="sep">·</span>' +
+    `<span class="indexed" title="${escapeHtml(`Index last updated: ${hidden}`)}">` +
+    `${icon('reindex')}${escapeHtml(shown)}</span>`
+  )
 }
 
 /** The last path segment - what the user actually calls the repository. */
@@ -666,7 +677,9 @@ export function renderBody(model: PanelModel, nonce: string): string {
         `<div class="actions grid">${logActions.join('')}</div>`,
     ),
   )
-  parts.push(section('Projects', projectCards(model.projects, loading)))
+  parts.push(
+    section('Projects', projectCards(model.projects, loading, model.absoluteTime === true)),
+  )
 
   return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
 }
@@ -728,10 +741,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 header {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 8px;
   padding: 14px 12px 10px;
 }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 150px; }
 .mark {
   width: 30px; height: 30px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -807,7 +820,10 @@ header {
      whatever the surrounding text uses, which reads washed out on dark themes
      where the foreground token is already a soft grey. */
   color: var(--vscode-foreground);
-  font-size: 15px; font-weight: 800; line-height: 1.15; letter-spacing: -.02em;
+  /* Shrinks with the sidebar instead of being cut mid-digit. The webview's
+     viewport is the panel, so vw tracks the panel's own width. */
+  font-size: clamp(11px, 3.6vw, 15px);
+  font-weight: 800; line-height: 1.15; letter-spacing: -.02em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .metric-label {
@@ -856,8 +872,14 @@ section h2 {
   border-radius: 50%; background: var(--ok);
 }
 .card-text { flex: 1; min-width: 0; }
-.card-name { font-size: 12px; font-weight: 700; line-height: 1.3; word-break: break-word; }
-.card-path { margin-top: 1px; font-size: 10px; color: var(--muted); word-break: break-all; }
+.card-name {
+  font-size: 12px; font-weight: 700; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-path {
+  margin-top: 1px; font-size: 10px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .card-tool {
   flex-shrink: 0; padding: 3px; cursor: pointer; opacity: 0;
   color: var(--muted); background: none;
@@ -879,15 +901,15 @@ section h2 {
 }
 .card-tool .icon { width: 14px; height: 14px; opacity: 1; }
 .card-stats {
-  display: flex; align-items: center; gap: 5px;
-  margin-top: 6px; font-size: 11px; color: var(--muted);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px 5px;
+  margin-top: 5px; font-size: 11px; color: var(--muted);
 }
 .card-stats em { font-style: normal; opacity: .7; }
 .card-stats .sep { opacity: .35; }
 .card-age { margin-top: 4px; font-size: 10px; color: var(--muted); }
 /* An index behind its working tree is worth noticing, not alarming. */
 .card-age .stale { color: var(--warn); cursor: help; }
-.card-tools { display: flex; gap: 2px; flex-shrink: 0; }
+.card-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; flex-wrap: nowrap; }
 /* The branch reads as a label rather than another number. */
 .card-stats .branch {
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

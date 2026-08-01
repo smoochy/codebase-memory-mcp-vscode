@@ -41,6 +41,31 @@ function numberSetting(key: string, fallback: number, low: number, high: number)
 }
 
 /**
+ * Summarise what `index_repository` reported.
+ *
+ * The counts are the only evidence that the call did anything: indexing is
+ * incremental, so an unchanged repository returns in well under a second with
+ * the same numbers and without touching its store file.
+ */
+function indexReport(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null) {
+    return 'done'
+  }
+  const record = payload as { nodes?: unknown; edges?: unknown; skipped_count?: unknown }
+  const parts: string[] = []
+  if (typeof record.nodes === 'number') {
+    parts.push(`${record.nodes.toLocaleString('en-US')} nodes`)
+  }
+  if (typeof record.edges === 'number') {
+    parts.push(`${record.edges.toLocaleString('en-US')} edges`)
+  }
+  if (typeof record.skipped_count === 'number' && record.skipped_count > 0) {
+    parts.push(`${String(record.skipped_count)} skipped`)
+  }
+  return parts.length === 0 ? 'done' : parts.join(', ')
+}
+
+/**
  * Key under which the extension records that it installed the binary itself.
  *
  * Ownership cannot be inferred from the location: the CLI's own installer
@@ -184,6 +209,51 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // anything goes wrong.
   log(`activated, extension v${extensionVersion ?? 'unknown'}`)
 
+  /**
+   * Record changes to the extension's own settings.
+   *
+   * Only CLI settings were logged, because only those go through a handler.
+   * VS Code's own settings change behind the extension's back, so the previous
+   * values are kept here and diffed when it reports a change - otherwise the
+   * log says a setting changed without saying to what, or says nothing at all.
+   */
+  const watchedSettings = [
+    'binarySource',
+    'externalBinaryPath',
+    'autoRefresh',
+    'refreshIntervalSeconds',
+    'absoluteTimestamps',
+    'checkForUpdates',
+    'logLevel',
+    'logMaxSizeMb',
+    'logKeptFiles',
+  ] as const
+  const snapshotSettings = (): Map<string, string> =>
+    new Map(watchedSettings.map((key) => [key, JSON.stringify(setting<unknown>(key, null))]))
+  let previousSettings = snapshotSettings()
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration('betterCmm')) {
+        return
+      }
+      const current = snapshotSettings()
+      for (const [key, value] of current) {
+        const before = previousSettings.get(key)
+        if (before !== value) {
+          log(`User: extension setting ${key} ${before ?? 'unset'} -> ${value}`)
+        }
+      }
+      previousSettings = current
+      // The log file's own limits are read once at construction, so a change
+      // to them needs saying out loud rather than appearing not to work.
+      if (current.get('logMaxSizeMb') !== undefined || current.get('logKeptFiles') !== undefined) {
+        debug('log size settings take effect after the window is reloaded')
+      }
+      void refresh()
+    }),
+  )
+
   const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
 
   /**
@@ -292,6 +362,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       platform: process.platform,
       gitBashAvailable: gitBashAvailable(),
       managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
+      absoluteTime: setting('absoluteTimestamps', false),
     })
   }
 
@@ -562,7 +633,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         warn(`CLI setting ${key} failed to change: ${result.error}`)
         fail(`Setting ${key}`, new Error(result.error))
       } else {
-        log(`CLI setting ${key} is now "${value}"`)
+        debug(`CLI setting ${key} is now "${value}"`)
       }
       await refreshCliSettings()
     },
@@ -798,7 +869,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         async () => client.addProject(project.root_path),
       )
       if (result.ok) {
-        log(`reindex of "${project.name}" finished`)
+        // Indexing is incremental: an unchanged repository comes back in under
+        // a second and the store file is not touched, so "finished" on its own
+        // was indistinguishable from nothing having happened. Report what the
+        // CLI actually said.
+        const report = indexReport(result.value)
+        log(`reindex of "${project.name}" finished: ${report}`)
+        void vscode.window.showInformationMessage(`${project.name}: ${report}`)
       } else {
         warn(`reindex of "${project.name}" failed: ${result.error}`)
         void vscode.window

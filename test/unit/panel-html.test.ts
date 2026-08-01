@@ -5,6 +5,8 @@ import {
   escapeHtml,
   formatBytes,
   formatCount,
+  relativeTime,
+  absoluteTimeLabel,
   renderBody,
   type PanelModel,
 } from '../../src/panel/html'
@@ -87,6 +89,40 @@ describe('formatBytes', () => {
 
   it('stops at the largest unit rather than running off the end of the table', () => {
     assert.match(formatBytes(5 * 1024 ** 5), /TB$/)
+  })
+})
+
+describe('relativeTime', () => {
+  const at = (minutes: number): number => Date.UTC(2026, 7, 1, 12, 0) - minutes * 60_000
+  const now = Date.UTC(2026, 7, 1, 12, 0)
+
+  it('counts minutes below an hour', () => {
+    assert.equal(relativeTime(at(5), now), '5m ago')
+    assert.equal(relativeTime(at(27), now), '27m ago')
+  })
+
+  // Hours all the way up rather than switching to days: the question is how
+  // stale the index is, and hours compare directly at a glance.
+  it('counts hours above one, without ever switching to days', () => {
+    assert.equal(relativeTime(at(60), now), '1h ago')
+    assert.equal(relativeTime(at(73 * 60), now), '73h ago')
+    assert.equal(relativeTime(at(183 * 60), now), '183h ago')
+  })
+
+  it('says just now under a minute, and never counts backwards', () => {
+    assert.equal(relativeTime(now, now), 'just now')
+    assert.equal(relativeTime(now + 60_000, now), 'just now')
+  })
+})
+
+describe('absoluteTimeLabel', () => {
+  // No locale argument, so the host decides: a German reader sees 01.08.2026,
+  // an American one 8/1/2026, without the extension picking for them.
+  it('follows the host conventions rather than a fixed format', () => {
+    const label = absoluteTimeLabel(Date.UTC(2026, 7, 1, 12, 31))
+    assert.match(label, /2026/)
+    assert.match(label, /\d{1,2}[.\/-]\d{1,2}/)
+    assert.match(label, /\d{1,2}:\d{2}/)
   })
 })
 
@@ -347,15 +383,26 @@ describe('renderBody', () => {
         }),
         'n1',
       )
-      assert.match(html, /indexed 2 hours ago/)
+      assert.match(html, /2h ago/)
     })
 
-    it('flags an index that is behind its working tree', () => {
-      const html = renderBody(
-        model({ projects: [{ name: 'a', root_path: '/a', changed_count: 3 }] }),
+    it('shows the absolute time when the setting asks for it, with the age on hover', () => {
+      const at = Date.UTC(2026, 7, 1, 12, 31)
+      const relative = renderBody(
+        model({ projects: [{ name: 'a', root_path: '/a', indexed_at_ms: at }] }),
         'n1',
       )
-      assert.match(html, /3 files changed since/)
+      const absolute = renderBody(
+        model({
+          projects: [{ name: 'a', root_path: '/a', indexed_at_ms: at }],
+          absoluteTime: true,
+        }),
+        'n1',
+      )
+      // Whichever form is shown, the other one is the tooltip.
+      assert.match(relative, /h ago<\/span>/)
+      assert.match(relative, /title="Index last updated: [0-9]/)
+      assert.match(absolute, /title="Index last updated: [0-9]+h ago"/)
     })
 
     it('says nothing about freshness when the CLI reported nothing', () => {
