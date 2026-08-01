@@ -68,6 +68,36 @@ describe('LogFile', () => {
     assert.ok(!existsSync(`${log.path}.3`), 'kept more generations than configured')
   })
 
+  it('clears the current file and every rotated generation', () => {
+    const log = make(60, 2)
+    for (let i = 0; i < 6; i += 1) {
+      log.append('info', `entry ${String(i)} ${'z'.repeat(40)}`, AT)
+    }
+    assert.ok(existsSync(log.path))
+    assert.ok(existsSync(`${log.path}.1`))
+    log.clear()
+    assert.ok(!existsSync(log.path))
+    assert.ok(!existsSync(`${log.path}.1`))
+    assert.ok(!existsSync(`${log.path}.2`))
+  })
+
+  it('clears cleanly when nothing has been written yet', () => {
+    const log = make()
+    assert.doesNotThrow(() => {
+      log.clear()
+    })
+  })
+
+  // A non-numeric size setting used to reach here as NaN, and every size
+  // comparison against NaN is false, so rotation stopped silently on a file
+  // that now grows for the life of the installation.
+  it('still rotates when handed a nonsense cap', () => {
+    const log = make(Number.NaN as unknown as number)
+    log.append('info', 'x'.repeat(200), AT)
+    log.append('info', 'y'.repeat(200), AT)
+    assert.ok(existsSync(log.path))
+  })
+
   it('never throws when the path cannot be written', () => {
     // The directory name is a file, so every write below fails. Logging must
     // not be the reason an operation fails.

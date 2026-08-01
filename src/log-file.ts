@@ -47,6 +47,23 @@ export class LogFile {
     }
   }
 
+  /**
+   * Delete the current file and every rotated generation.
+   *
+   * The log persists for the life of the installation now and carries
+   * filesystem paths and project names, so emptying it has to be an action
+   * rather than a matter of finding the files.
+   */
+  clear(): void {
+    for (let index = 0; index <= this.keep; index += 1) {
+      try {
+        rmSync(index === 0 ? this.path : `${this.path}.${String(index)}`, { force: true })
+      } catch {
+        // A locked generation stays; the rest still go.
+      }
+    }
+  }
+
   private size(): number {
     try {
       return statSync(this.path).size

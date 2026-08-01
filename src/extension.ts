@@ -27,6 +27,20 @@ function setting<T>(key: string, fallback: T): T {
 }
 
 /**
+ * A numeric setting, clamped and guaranteed finite.
+ *
+ * `get<T>()` casts rather than validates, and the schema's minimum/maximum
+ * only bind the settings editor - a hand-edited settings file hands the raw
+ * value straight through. Left unchecked, a non-numeric log size becomes NaN,
+ * every size comparison against it is false, and rotation stops silently on
+ * the one file that now grows for the life of the installation.
+ */
+function numberSetting(key: string, fallback: number, low: number, high: number): number {
+  const raw = Number(setting<unknown>(key, fallback))
+  return Number.isFinite(raw) ? Math.min(high, Math.max(low, Math.round(raw))) : fallback
+}
+
+/**
  * Key under which the extension records that it installed the binary itself.
  *
  * Ownership cannot be inferred from the location: the CLI's own installer
@@ -136,8 +150,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const logFile = new LogFile(
     join(storageDir, 'logs'),
     'better-cmm.log',
-    Math.max(1, setting('logMaxSizeMb', 1)) * 1024 * 1024,
-    Math.max(1, setting('logKeptFiles', 3)),
+    numberSetting('logMaxSizeMb', 1, 1, 100) * 1024 * 1024,
+    numberSetting('logKeptFiles', 3, 1, 20),
   )
 
   const logAt = (level: LogLevel, message: string): void => {
@@ -623,7 +637,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       // rather than trusting it, so it can never become a raw CLI argument.
       const project = projects.find((p) => p.name === name)
       if (project === undefined) {
-        channel.appendLine(`ignored removeProject for unknown project: ${name}`)
+        warn(`ignored removeProject for unknown project: ${name}`)
         return
       }
       const confirmed = await vscode.window.showWarningMessage(
@@ -649,6 +663,22 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       } catch {
         channel.show(false)
       }
+    },
+    'betterCmm.clearLog': async () => {
+      // The log persists for the life of the installation now, and it carries
+      // paths and project names, so there has to be a way to empty it that is
+      // not 'find the file yourself'.
+      const confirmed = await vscode.window.showWarningMessage(
+        'Clear the extension log?',
+        { modal: true, detail: logFile.path },
+        'Clear',
+      )
+      if (confirmed !== 'Clear') {
+        return
+      }
+      logFile.clear()
+      log('log cleared')
+      void vscode.window.showInformationMessage('Extension log cleared.')
     },
     'betterCmm.showEngineLogs': async () => {
       // The engine writes one file per connected client plus one per indexing
@@ -681,14 +711,23 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       const picked = await vscode.window.showQuickPick(entries, {
         title: 'Engine logs',
-        placeHolder: 'Written by codebase-memory-mcp itself, newest first',
+        // Said plainly: unlike the extension's own log, these are written by
+        // the CLI and pass through no redaction before they are shown.
+        placeHolder: 'Written by codebase-memory-mcp itself. Not redacted - check before sharing.',
       })
       if (picked === undefined) {
         return
       }
       log(`opening engine log ${picked.label}`)
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(picked.path))
-      await vscode.window.showTextDocument(document, { preview: false })
+      try {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(picked.path))
+        await vscode.window.showTextDocument(document, { preview: false })
+      } catch (cause) {
+        // An indexing worker's log is exactly the file large enough for the
+        // editor to refuse it, and it may also have been rotated away between
+        // the pick and the open. Either way the user gets told.
+        fail(`Opening ${picked.label}`, cause)
+      }
     },
     'betterCmm.openSettings': async () => {
       debug('opening the VS Code settings UI')

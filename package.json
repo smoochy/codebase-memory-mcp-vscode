@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "smoochy",
   "license": "MIT",
   "engines": {
@@ -130,6 +130,11 @@
       {
         "command": "betterCmm.showEngineLogs",
         "title": "View Engine Logs",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.clearLog",
+        "title": "Clear Extension Log",
         "category": "Codebase Memory"
       }
     ],
