@@ -415,7 +415,7 @@ function staleTag(): string {
 }
 
 /** The last path segment - what the user actually calls the repository. */
-function folderName(rootPath: string): string {
+export function folderName(rootPath: string): string {
   const trimmed = trimmedPath(rootPath)
   const parts = trimmed.split(/[\\/]/)
   return parts[parts.length - 1] ?? trimmed

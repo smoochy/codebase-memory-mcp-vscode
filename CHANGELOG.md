@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.2]
+
+- Adding repositories now logs what was indexed - the repository and its node
+  and edge counts - instead of only that it happened.
+- The log names repositories the way the panel does, by their folder, rather
+  than by the CLI's internal name with every path separator turned into a
+  hyphen.
+- Auto reindex lines are prefixed `Auto Reindex:`, and arming the timer is a
+  debug detail rather than an info line repeating the setting change above it.
+- Changing a setting no longer refreshes the panel unless the setting affects
+  what the refresh would show. A log level or an interval caused a second CLI
+  round trip a second after the one leaving the settings screen already did.
+
 ## [0.9.1]
 
 - The index time now follows the mtime of the store file the CLI writes, not

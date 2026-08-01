@@ -11,7 +11,7 @@ import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from '.
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
 import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
-import { formatBytes } from './panel/html'
+import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
@@ -349,7 +349,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       ) {
         rearmTimers()
       }
-      void refresh()
+      // Only the settings that change what a refresh would produce: which
+      // binary runs, whether an update is offered, how times are rendered.
+      // Leaving the screen refreshes anyway, so refreshing on every setting
+      // meant two CLI round trips a second apart for a change - a log level,
+      // an interval - that the panel does not display at all.
+      if (
+        ['binarySource', 'externalBinaryPath', 'checkForUpdates', 'absoluteTimestamps', 'dateLocale'].some(
+          (key) => current.get(key) !== before.get(key),
+        )
+      ) {
+        void refresh()
+      }
     }),
   )
 
@@ -451,7 +462,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       for (const project of projects) {
         if (project.stale === true && !reportedStale.has(project.name)) {
           reportedStale.add(project.name)
-          log(`"${project.name}" (${project.root_path}) is outdated: the checkout moved to another commit`)
+          log(`"${folderName(project.root_path)}" (${project.root_path}) is outdated: the checkout moved to another commit`)
         } else if (project.stale !== true) {
           reportedStale.delete(project.name)
         }
@@ -846,15 +857,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             progress.report({
               message: `${folder.fsPath} (${String(done + 1)}/${String(picked.length)})`,
             })
-            log(`indexing ${folder.fsPath}`)
             const result = await client.addProject(folder.fsPath)
             if (result.ok) {
-              log(`indexed ${folder.fsPath}`)
+              log(
+                `User: added "${folderName(folder.fsPath)}" (${folder.fsPath}): ` +
+                  indexReport(result.value),
+              )
             } else {
               // Silence here was the whole problem: indexing could fail on
               // every folder and the panel just stayed empty.
               failures.push(`${folder.fsPath}: ${result.error}`)
-              warn(`indexing ${folder.fsPath} failed: ${result.error}`)
+              warn(`User: adding "${folderName(folder.fsPath)}" (${folder.fsPath}) failed: ${result.error}`)
             }
           }
         },
@@ -1010,7 +1023,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return
       }
       if (inFlight.has(project.name)) {
-        log(`User: reindex "${project.name}" skipped, one is already running`)
+        log(`User: reindex "${folderName(project.root_path)}" skipped, one is already running`)
         return
       }
       const client = new CliClient(state.activePath, runProcess, 300_000)
@@ -1030,11 +1043,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // was indistinguishable from nothing having happened. Report what the
         // CLI actually said, on the one line that also names who asked.
         const report = indexReport(result.value, { nodes: project.nodes, edges: project.edges })
-        log(`User: reindex "${project.name}" (${project.root_path}): ${report}`)
+        log(`User: reindex "${folderName(project.root_path)}" (${project.root_path}): ${report}`)
         await rememberIndexed(project.name, project.git?.head_sha)
         void vscode.window.showInformationMessage(`${project.name}: ${report}`)
       } else {
-        warn(`User: reindex "${project.name}" (${project.root_path}) failed: ${result.error}`)
+        warn(`User: reindex "${folderName(project.root_path)}" (${project.root_path}) failed: ${result.error}`)
         void vscode.window
           .showErrorMessage(`Could not reindex ${project.name}.`, 'View extension log')
           .then((choice) => {
@@ -1142,7 +1155,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       (project) => project.stale === true && !inFlight.has(project.name),
     )
     debug(
-      `Auto: checked ${String(projects.length)} project(s), ${String(due.length)} to reindex`,
+      `Auto Reindex: checked ${String(projects.length)} project(s), ${String(due.length)} to reindex`,
     )
     if (due.length === 0) {
       return
@@ -1160,17 +1173,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const result = await client.addProject(project.root_path)
         if (result.ok) {
           log(
-            `Auto: reindex "${project.name}" (${project.root_path}): ` +
+            `Auto Reindex: "${folderName(project.root_path)}" (${project.root_path}): ` +
               indexReport(result.value, { nodes: project.nodes, edges: project.edges }),
           )
           await rememberIndexed(project.name, project.git?.head_sha)
         } else {
           // A root that was deleted or unmounted fails here every tick. It is
           // logged and skipped; one broken repository must not stop the rest.
-          warn(`Auto: reindex "${project.name}" failed: ${result.error}`)
+          warn(`Auto Reindex: "${folderName(project.root_path)}" failed: ${result.error}`)
         }
       } catch (cause) {
-        warn(`Auto: reindex "${project.name}" threw: ${cause instanceof Error ? cause.message : String(cause)}`)
+        warn(`Auto Reindex: "${folderName(project.root_path)}" threw: ${cause instanceof Error ? cause.message : String(cause)}`)
       } finally {
         inFlight.delete(project.name)
       }
@@ -1202,10 +1215,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
     if (setting('autoReindex', false)) {
       const seconds = numberSetting('autoReindexIntervalSeconds', 300, 30, 3600)
-      log(`auto reindex armed, checking every ${String(seconds)}s`)
+      debug(`Auto Reindex: armed, checking every ${String(seconds)}s`)
       autoReindexTimer = setInterval(() => {
         if (ticking) {
-          debug('auto reindex: previous check still running, skipping this one')
+          debug('Auto Reindex: previous check still running, skipping this one')
           return
         }
         ticking = true
@@ -1214,7 +1227,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         void autoReindexTick()
           .catch((cause: unknown) => {
             warn(
-              `auto reindex tick failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+              `Auto Reindex: check failed: ${cause instanceof Error ? cause.message : String(cause)}`,
             )
           })
           .finally(() => {
