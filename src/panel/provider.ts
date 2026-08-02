@@ -18,6 +18,8 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private view_: 'main' | 'settings' = 'main'
   private cliSettings: CliSetting[] = []
   private updateProgress: number | null = null
+  /** Whether the current view object has been given a badge. See `setBadge`. */
+  private badgeWritten = false
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -33,6 +35,8 @@ export class PanelProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view
+    // A fresh object carries no badge, whatever the activity bar still shows.
+    this.badgeWritten = false
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] }
     view.webview.onDidReceiveMessage(
       (message: { command?: unknown; project?: unknown; value?: unknown }) => {
@@ -166,7 +170,26 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       `<style nonce="${nonce}">${PANEL_CSS}</style>` +
       `</head><body>${renderBody(model, nonce)}</body></html>`
     this.view.webview.html = this.lastHtml
-    this.view.badge = this.badgeFor(model)
+    this.setBadge(this.view, this.badgeFor(model))
+  }
+
+  /**
+   * Write the badge, working around VS Code dropping the clear.
+   *
+   * VS Code caches the last badge on the WebviewView object and skips the
+   * update when the value has not changed. Hiding the view discards that
+   * object; the one resolved afterwards starts with an empty cache while the
+   * activity bar still shows the old count, so clearing it compares undefined
+   * against undefined and is thrown away. The badge then survives until the
+   * window is reloaded. Setting one first gives that cache something to differ
+   * from, and is only needed once per view.
+   */
+  private setBadge(view: vscode.WebviewView, badge: vscode.ViewBadge | undefined): void {
+    if (badge === undefined && !this.badgeWritten) {
+      view.badge = { value: 1, tooltip: '' }
+    }
+    this.badgeWritten = true
+    view.badge = badge
   }
 
   /**

@@ -467,7 +467,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       for (const project of projects) {
         if (project.stale === true && !reportedStale.has(project.name)) {
           reportedStale.add(project.name)
-          log(`"${folderName(project.root_path)}" (${project.root_path}) is outdated: the checkout moved to another commit`)
+          // The counts as they stood when the index fell behind, so a later
+          // reindex line can be read against them without hunting for the
+          // panel's numbers at that moment.
+          const counts =
+            project.nodes === undefined && project.edges === undefined
+              ? ''
+              : ` Currently ${String(project.nodes ?? 0)} nodes, ${String(project.edges ?? 0)} edges.`
+          log(
+            `"${folderName(project.root_path)}" (${project.root_path}) is outdated: ` +
+              `the checkout moved to another commit.${counts}`,
+          )
         } else if (project.stale !== true) {
           reportedStale.delete(project.name)
         }

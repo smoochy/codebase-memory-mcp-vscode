@@ -1,18 +1,14 @@
-# Manual test checklist — Better Codebase Memory MCP
+# Manual test checklist - Better Codebase Memory MCP
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-231 unit tests cover the pure logic: parsing, state transitions, URL and checksum
-handling, path resolution, wizard steps, and the download/verify/install sequence
-against injected stubs. Those tests spawn no processes, touch no network, and write
-no files. That is deliberate — but it means everything below is still unproven on
-real hardware.
+231 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
 
 **Status legend**
 
-- **Blocking** — must pass before the extension is published.
-- **Important** — a defect here is user-visible but not dangerous.
-- **Nice to have** — polish; ship without it if time is short.
+- **Blocking** - must pass before the extension is published.
+- **Important** - a defect here is user-visible but not dangerous.
+- **Nice to have** - polish; ship without it if time is short.
 
 ---
 
@@ -29,16 +25,13 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking |
 | 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking |
 
-**Why these matter most.** #2, #3 and #11 exercise the code that writes an executable
-to disk. The unit tests prove a checksum mismatch aborts without writing, but only a
-real run proves the same on a genuine interrupted download.
+**Why these matter most.** #2, #3 and #11 exercise the code that writes an executable to disk. The unit tests prove a checksum mismatch aborts without writing, but only a real run proves the same on a genuine interrupted download.
 
 ---
 
-## B. Automation-adjacent — verify the real behaviour matches the tested logic
+## B. Automation-adjacent - verify the real behaviour matches the tested logic
 
-The logic is unit-tested; what is untested is whether the extension wires it to the
-real VS Code API correctly.
+The logic is unit-tested; what is untested is whether the extension wires it to the real VS Code API correctly.
 
 | # | Area | What to do | Expected | Priority |
 |---|---|---|---|---|
@@ -50,13 +43,11 @@ real VS Code API correctly.
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
 | 13 | Clipboard | Run the copy commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 
-**#4, #5, #6 and #7 are the requirements you set personally** — the workspace must
-never be touched, and an installation the extension does not own must never be
-written to. Worth checking first.
+**#4, #5, #6 and #7 are the requirements you set personally** - the workspace must never be touched, and an installation the extension does not own must never be written to. Worth checking first.
 
 ---
 
-## C. Visual and performance — human judgement only
+## C. Visual and performance - human judgement only
 
 | # | Area | What to do | Expected | Priority |
 |---|---|---|---|---|
@@ -70,19 +61,10 @@ written to. Worth checking first.
 
 Deferred during implementation; each is recorded in the SDD ledger.
 
-1. **The release lookup is cached for the whole session.** A release published
-   while VS Code is open is not noticed until the window reloads. Running
-   **Update Binary** always checks GitHub directly, so it is never stale.
-   Worth confirming during test #10 that the banner appears at all after a
-   restart with an older binary in place.
-2. **No progress line for the final install step.** The in-process binary move
-   reports nothing; the panel keeps showing "Verify the download" until it
-   finishes. Cosmetic — the operation is instant.
-3. **SHA-256 only, no signature check.** The binary is verified against the
-   release's own `checksums.txt`. That detects corruption and tampering in
-   transit, but not a compromised release. Accepted for iteration 1.
-4. **No hardening against a malicious `tar` member path.** Extraction trusts the
-   archive's internal paths. Relevant only if the upstream release is compromised.
+1. **The release lookup is cached for the whole session.** A release published while VS Code is open is not noticed until the window reloads. Running **Update Binary** always checks GitHub directly, so it is never stale. Worth confirming during test #10 that the banner appears at all after a restart with an older binary in place.
+2. **No progress line for the final install step.** The in-process binary move reports nothing; the panel keeps showing "Verify the download" until it finishes. Cosmetic - the operation is instant.
+3. **SHA-256 only, no signature check.** The binary is verified against the release's own `checksums.txt`. That detects corruption and tampering in transit, but not a compromised release. Accepted for iteration 1.
+4. **No hardening against a malicious `tar` member path.** Extraction trusts the archive's internal paths. Relevant only if the upstream release is compromised.
 
 ---
 
@@ -92,29 +74,18 @@ Deferred during implementation; each is recorded in the SDD ledger.
 
 **6 passing, 0 failing** as of the last run, alongside 231 unit tests.
 
-⚠️ **It will not run from a terminal inside VS Code without one change.**
-VS Code exports `ELECTRON_RUN_AS_NODE=1` to its integrated terminals. That
-variable makes the downloaded `Code.exe` run as plain Node, so it reports
-`v24.18.0` and rejects every VS Code flag with `bad option: --disable-extensions`
-and so on. Clear it first:
+⚠️ **It will not run from a terminal inside VS Code without one change.** VS Code exports `ELECTRON_RUN_AS_NODE=1` to its integrated terminals. That variable makes the downloaded `Code.exe` run as plain Node, so it reports `v24.18.0` and rejects every VS Code flag with `bad option: --disable-extensions` and so on. Clear it first:
 
 ```powershell
 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 npm run test:integration
 ```
 
-An external terminal (one not launched by VS Code) does not need this. The
-variable is inherited from the editor, not set by this repo.
+An external terminal (one not launched by VS Code) does not need this. The variable is inherited from the editor, not set by this repo.
 
-Two related traps, both now guarded in
-[test/integration/runTest.ts](../test/integration/runTest.ts):
+Two related traps, both now guarded in [test/integration/runTest.ts](../test/integration/runTest.ts):
 
-- `npm` reported **exit 0 even when zero tests ran**. The suite now writes its
-  result to `.vscode-test/integration-result.json` and the runner fails if that
-  file is missing or reports no passing tests, so a silent run can no longer
-  look like a pass.
-- The runner launches the Electron binary directly. `bin/code.cmd` is the CLI
-  wrapper — it spawns VS Code detached and returns immediately, reporting
-  success without ever loading the tests.
+- `npm` reported **exit 0 even when zero tests ran**. The suite now writes its result to `.vscode-test/integration-result.json` and the runner fails if that file is missing or reports no passing tests, so a silent run can no longer look like a pass.
+- The runner launches the Electron binary directly. `bin/code.cmd` is the CLI wrapper - it spawns VS Code detached and returns immediately, reporting success without ever loading the tests.
 
 **None of this was an extension defect.**
