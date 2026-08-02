@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.8]
+
+- A fresh install no longer shows a count of one on the activity bar icon before anything is pending. Clearing the badge on a rebuilt view needs a write with a value in front of it, or VS Code discards the clear as a repeat; that write was also happening on the very first view, where there was no stale count to clear and the value stuck.
+
 ## [0.9.7]
 
 - The activity bar count now disappears once the update it announced has been taken. VS Code caches the last badge on the view object and drops a repeat, and a view rebuilt after being hidden starts with that cache empty while the old count is still on screen, so the clear was being discarded and the count survived until the window was reloaded.

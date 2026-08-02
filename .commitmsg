@@ -1,0 +1,11 @@
+fix: stop the activity bar claiming an update on a fresh install
+
+The badge is cleared by writing a value first and the clear behind it,
+because VS Code drops a clear that matches the cached badge on a view
+rebuilt after being hidden. That priming write ran on the first view of
+all, where there was no stale count to clear - so the value landed and
+the clear behind it was the no-op instead.
+
+Split the one flag in two: whether this view object has been written to,
+and whether the icon is actually showing a count. The priming write now
+needs both.

@@ -19,7 +19,15 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private cliSettings: CliSetting[] = []
   private updateProgress: number | null = null
   /** Whether the current view object has been given a badge. See `setBadge`. */
-  private badgeWritten = false
+  private viewBadgeWritten = false
+  /**
+   * Whether the activity bar is showing a badge right now.
+   *
+   * Deliberately not reset when a view is resolved: the icon keeps its count
+   * across a hidden view, which is the whole reason `setBadge` needs a
+   * workaround at all.
+   */
+  private badgeShown = false
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -36,7 +44,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view
     // A fresh object carries no badge, whatever the activity bar still shows.
-    this.badgeWritten = false
+    this.viewBadgeWritten = false
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] }
     view.webview.onDidReceiveMessage(
       (message: { command?: unknown; project?: unknown; value?: unknown }) => {
@@ -183,13 +191,20 @@ export class PanelProvider implements vscode.WebviewViewProvider {
    * against undefined and is thrown away. The badge then survives until the
    * window is reloaded. Setting one first gives that cache something to differ
    * from, and is only needed once per view.
+   *
+   * That priming write is only correct when there is a stale count to clear.
+   * On a first activation there is none, and writing one made the icon claim
+   * an update on a fresh install - the write landed and the clear behind it
+   * was dropped as the no-op it now was. Hence `badgeShown`, which outlives
+   * the view object the way the icon does.
    */
   private setBadge(view: vscode.WebviewView, badge: vscode.ViewBadge | undefined): void {
-    if (badge === undefined && !this.badgeWritten) {
+    if (badge === undefined && !this.viewBadgeWritten && this.badgeShown) {
       view.badge = { value: 1, tooltip: '' }
     }
-    this.badgeWritten = true
+    this.viewBadgeWritten = true
     view.badge = badge
+    this.badgeShown = badge !== undefined
   }
 
   /**
