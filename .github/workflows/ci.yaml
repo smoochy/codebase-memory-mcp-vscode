@@ -1,0 +1,93 @@
+name: ci
+
+# Plain `pull_request`, never `pull_request_target` or `workflow_run`. Those two
+# run with repository context and secret access against the pull request's own
+# code, which is the injection surface this repository is being hardened against
+# before it goes public. Nothing here needs a secret, so nothing here gets one.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Least privilege for every job. Checkout needs read; no job writes anything.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Actions are pinned to a commit SHA rather than a tag: a tag is mutable and can
+# be repointed at other code by whoever owns the action repository.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+
+  test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:package
+
+  # Both operating systems, because the extension carries real Windows-specific
+  # branches (shell selection, profile paths, the Git Bash uninstall command)
+  # that no other tier exercises.
+  test-integration:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # The tier downloads and launches a real VS Code. On Linux that needs a
+      # display, hence xvfb; Windows runs it headed as-is.
+      - name: Run the integration tests
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a npm run test:integration
+          else
+            npm run test:integration
+          fi
+        shell: bash

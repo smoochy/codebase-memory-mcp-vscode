@@ -18,5 +18,6 @@ tsconfig*.json
 scripts/**
 # Repository metadata, meaningless inside an installed extension.
 .gitignore
+.github/**
 # Scratch files from local preview/probe runs.
 .tmp-*
