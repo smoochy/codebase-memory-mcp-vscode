@@ -49,8 +49,8 @@ describe('engineLogDirectory', () => {
 describe('projectStorePath', () => {
   it('names the store file the CLI writes per project', () => {
     assert.equal(
-      projectStorePath('C:/Users/me', 'D-Hold-VS-Code-caddy-modules'),
-      'C:/Users/me/.cache/codebase-memory-mcp/D-Hold-VS-Code-caddy-modules.db',
+      projectStorePath('C:/Users/me', 'C-projects-example-repo'),
+      'C:/Users/me/.cache/codebase-memory-mcp/C-projects-example-repo.db',
     )
   })
 

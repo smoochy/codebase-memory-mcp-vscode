@@ -5,3 +5,17 @@ dist/
 # Electron host downloaded by @vscode/test-electron for the integration suite.
 .vscode-test*/
 .commitmsg
+# Agent scratch state. Today it self-ignores from the inside, which is not a
+# guarantee the repository should rely on.
+.superpowers/
+# Scratch files from local preview and probe runs.
+.tmp-*
+coverage/
+*.log
+# Local environment and editor state, none of which belongs to the extension.
+.env
+.env.*
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
