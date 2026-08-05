@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.9]
 
 - A project indexed outside the panel - through the CLI or the MCP tool - no longer keeps the "outdated" badge. The extension records the commit for indexes it runs itself, and nothing advanced that note when someone else rebuilt the store, so the badge stayed until the panel was reopened. The stored index being newer than the note is now taken as the reindex it is.
 
