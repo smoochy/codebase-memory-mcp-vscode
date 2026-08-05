@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.10]
 
 - The extension now activates when the window finishes starting up instead of when its panel is first opened, so the auto-refresh and auto-reindex timers run without the panel ever being visited. Previously a project could sit marked outdated for hours because nothing had woken the extension up.
 
