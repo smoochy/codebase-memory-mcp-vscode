@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- A project indexed outside the panel - through the CLI or the MCP tool - no longer keeps the "outdated" badge. The extension records the commit for indexes it runs itself, and nothing advanced that note when someone else rebuilt the store, so the badge stayed until the panel was reopened. The stored index being newer than the note is now taken as the reindex it is.
+
 ## [0.9.8]
 
 - A fresh install no longer shows a count of one on the activity bar icon before anything is pending. Clearing the badge on a rebuilt view needs a write with a value in front of it, or VS Code discards the clear as a repeat; that write was also happening on the very first view, where there was no stale count to clear and the value stuck.

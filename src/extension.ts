@@ -445,8 +445,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // A project added through the picker gets its note before its name is
         // known, so the commit is filled in on the first refresh that sees it.
         const existing = records[project.name]
+        const mtime = storeMtime(project.name)
         if (existing !== undefined && existing.sha === null && head !== null) {
           records[project.name] = { sha: head, at: existing.at }
+          recordsChanged = true
+        } else if (existing !== undefined && mtime !== undefined && mtime > existing.at) {
+          // The store was rebuilt after the note was written, so something
+          // other than this extension indexed the project - the CLI or the MCP
+          // tool, neither of which touches the note. Adopt the current commit
+          // instead of claiming the index is behind a checkout it was just
+          // built from.
+          records[project.name] = { sha: head, at: mtime }
           recordsChanged = true
         }
         const record = records[project.name]
@@ -456,7 +465,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           // Indexing is incremental: a reindex that finds nothing changed does
           // not touch the file, and reporting "just now" for it claimed work
           // that did not happen. This is when the index last actually changed.
-          indexed_at_ms: storeMtime(project.name) ?? record?.at,
+          indexed_at_ms: mtime ?? record?.at,
           stale:
             record?.sha != null && head !== null ? record.sha !== head : undefined,
         }
