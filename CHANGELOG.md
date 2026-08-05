@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Lint and all three test tiers now run on every pull request and on `main`. The integration tier runs on both Ubuntu and Windows, so the Windows-only shell and profile-path branches are exercised by something other than a developer's own machine.
+- The integration tests pass `--no-sandbox` on Linux, where the runner images deny the unprivileged user namespaces Electron's sandbox helper needs.
+- `.github/` is excluded from the packaged extension.
+
 ## [0.9.8]
 
 - A fresh install no longer shows a count of one on the activity bar icon before anything is pending. Clearing the badge on a rebuilt view needs a write with a value in front of it, or VS Code discards the clear as a repeat; that write was also happening on the very first view, where there was no stale count to clear and the value stuck.
