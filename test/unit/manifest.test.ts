@@ -39,6 +39,10 @@ describe('package.json contributions', () => {
     assert.equal(properties['betterCmm.refreshIntervalSeconds']?.default, 30)
   })
 
+  it('activates on startup, so the timers run without the panel being opened', () => {
+    assert.deepEqual(manifest.activationEvents, ['onStartupFinished'])
+  })
+
   it('ships no runtime dependencies', () => {
     assert.deepEqual(manifest.dependencies ?? {}, {})
   })

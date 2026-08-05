@@ -13,7 +13,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onView:betterCmm.panel"
+    "onStartupFinished"
   ],
   "scripts": {
     "vscode:prepublish": "node esbuild.mjs",
