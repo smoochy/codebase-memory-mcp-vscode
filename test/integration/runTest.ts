@@ -33,7 +33,13 @@ async function main(): Promise<void> {
       vscodeExecutablePath: executable,
       extensionDevelopmentPath,
       extensionTestsPath,
-      launchArgs: ['--disable-extensions'],
+      // --no-sandbox on Linux: the CI runner images deny unprivileged user
+      // namespaces, so Electron's sandbox helper cannot start and the test
+      // host dies before it loads a single test.
+      launchArgs:
+        process.platform === 'linux'
+          ? ['--disable-extensions', '--no-sandbox']
+          : ['--disable-extensions'],
     })
 
     if (!existsSync(resultFile)) {
