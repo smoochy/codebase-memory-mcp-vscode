@@ -1,8 +1,15 @@
 # Changelog
 
+## [0.9.10]
+
+- The extension now activates when the window finishes starting up instead of when its panel is first opened, so the auto-refresh and auto-reindex timers run without the panel ever being visited. Previously a project could sit marked outdated for hours because nothing had woken the extension up.
+
 ## [0.9.9]
 
 - A project indexed outside the panel - through the CLI or the MCP tool - no longer keeps the "outdated" badge. The extension records the commit for indexes it runs itself, and nothing advanced that note when someone else rebuilt the store, so the badge stayed until the panel was reopened. The stored index being newer than the note is now taken as the reindex it is.
+- Lint and all three test tiers now run on every pull request and on `main`. The integration tier runs on both Ubuntu and Windows, so the Windows-only shell and profile-path branches are exercised by something other than a developer's own machine.
+- The integration tests pass `--no-sandbox` on Linux, where the runner images deny the unprivileged user namespaces Electron's sandbox helper needs.
+- `.github/` is excluded from the packaged extension.
 
 ## [0.9.8]
 
