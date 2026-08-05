@@ -14,6 +14,7 @@ import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
+import { advanceIndexRecord, type IndexRecord } from './state/indexRecord'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -97,12 +98,6 @@ function indexReport(payload: unknown, before?: { nodes?: number; edges?: number
 const OWNED_INSTALL_KEY = 'betterCmm.managedInstallPath'
 const INDEX_RECORDS_KEY = 'betterCmm.indexRecords'
 
-/** When the extension last indexed a project, and from which commit. */
-interface IndexRecord {
-  /** Head commit at the time, or null when the repository reported none. */
-  sha: string | null
-  at: number
-}
 
 function resolveState(storageDir: string, ownedInstallPath: string | null): ExtensionState {
   const source = setting<BinarySource>('binarySource', 'auto')
@@ -442,21 +437,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           typeof project.git?.head_sha === 'string' && project.git.head_sha.length > 0
             ? project.git.head_sha
             : null
-        // A project added through the picker gets its note before its name is
-        // known, so the commit is filled in on the first refresh that sees it.
         const existing = records[project.name]
-        if (existing !== undefined && existing.sha === null && head !== null) {
-          records[project.name] = { sha: head, at: existing.at }
+        const mtime = storeMtime(project.name)
+        const record = advanceIndexRecord(existing, head, mtime)
+        if (record !== undefined && record !== existing) {
+          records[project.name] = record
           recordsChanged = true
         }
-        const record = records[project.name]
         return {
           ...project,
           // The store file's mtime, not the time of the last reindex request.
           // Indexing is incremental: a reindex that finds nothing changed does
           // not touch the file, and reporting "just now" for it claimed work
           // that did not happen. This is when the index last actually changed.
-          indexed_at_ms: storeMtime(project.name) ?? record?.at,
+          indexed_at_ms: mtime ?? record?.at,
           stale:
             record?.sha != null && head !== null ? record.sha !== head : undefined,
         }

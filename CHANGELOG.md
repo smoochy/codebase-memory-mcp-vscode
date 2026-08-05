@@ -1,10 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.9]
 
-- Lint and all three test tiers now run on every pull request and on `main`. The integration tier runs on both Ubuntu and Windows, so the Windows-only shell and profile-path branches are exercised by something other than a developer's own machine.
-- The integration tests pass `--no-sandbox` on Linux, where the runner images deny the unprivileged user namespaces Electron's sandbox helper needs.
-- `.github/` is excluded from the packaged extension.
+- A project indexed outside the panel - through the CLI or the MCP tool - no longer keeps the "outdated" badge. The extension records the commit for indexes it runs itself, and nothing advanced that note when someone else rebuilt the store, so the badge stayed until the panel was reopened. The stored index being newer than the note is now taken as the reindex it is.
 
 ## [0.9.8]
 
