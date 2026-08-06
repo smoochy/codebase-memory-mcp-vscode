@@ -2,6 +2,7 @@
 
 ## [0.9.10]
 
+- Pushing a `v*` tag now cuts the GitHub release and publishes to both marketplaces. The publish step waits behind the `release` environment's review, and each of the two uploads checks first whether that version is already live, so re-running a tag whose first upload succeeded completes the half that failed instead of failing on the half that worked.
 - The extension now activates when the window finishes starting up instead of when its panel is first opened, so the auto-refresh and auto-reindex timers run without the panel ever being visited. Previously a project could sit marked outdated for hours because nothing had woken the extension up.
 
 ## [0.9.9]
