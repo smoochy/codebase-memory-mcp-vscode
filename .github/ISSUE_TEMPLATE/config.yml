@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the codebase-memory-mcp CLI itself
+    url: https://github.com/DeusData/codebase-memory-mcp/issues
+    about: Indexing behaviour, graph contents, and what the MCP server returns come from the upstream CLI, which is separately maintained. This extension installs and operates that CLI rather than implementing it.

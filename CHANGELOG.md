@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- The repository carries its community files: issue forms for bug reports and feature requests, a chooser that routes CLI questions to the upstream project rather than here, and funding links. None of it ships inside the `.vsix`.
+- `package.json` names its `repository`, `bugs` and `homepage`, so both marketplaces link an installed extension back to its source and issue tracker.
+- The README's hand-maintained version badge is replaced by the Marketplace and Open VSX badges, which report the published version without a second edit at every bump, alongside a CI status badge.
+
 ## [0.9.10]
 
 - Pushing a `v*` tag now cuts the GitHub release and publishes to both marketplaces. The publish step waits behind the `release` environment's review, and each of the two uploads checks first whether that version is already live, so re-running a tag whose first upload succeeded completes the half that failed instead of failing on the half that worked.
