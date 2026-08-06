@@ -1,0 +1,141 @@
+name: release
+
+# A pushed `v*` tag is the only trigger. Merging to main never publishes: a
+# marketplace version cannot be withdrawn once accepted, so cutting a release
+# stays an explicit, separate act.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Builds the artifact and cuts the GitHub release. Holds no secret: the
+  # marketplace credentials live only in the `release` environment, which only
+  # the publish job enters.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # A tag can point at any commit, including one no pull request ever
+      # reviewed and no CI run ever saw. Requiring the tagged commit to be an
+      # ancestor of main is what makes the CI workflow a real gate here,
+      # without re-running the test tiers on every tag.
+      - name: Require the tag to sit on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # The tag is the human-entered half and package.json the machine-read
+      # half; a mismatch would publish a version nobody asked for.
+      - name: Check the tag against the manifest
+        id: version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $manifest_version" >&2
+            exit 1
+          fi
+          echo "version=$tag_version" >> "$GITHUB_OUTPUT"
+
+      - run: npm run package
+
+      - name: Take the release notes from the changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v v="## [$VERSION]" '
+            $0 == v { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "CHANGELOG.md has no section for $VERSION" >&2
+            exit 1
+          fi
+
+      # Create-or-reuse plus --clobber, so re-running the same tag after a
+      # half-finished publish updates the release instead of failing on it.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          gh release upload "$GITHUB_REF_NAME" ./*.vsix --clobber
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: vsix
+          path: ./*.vsix
+          if-no-files-found: error
+
+  # Both uploads share one job so the environment review is one approval for
+  # one decision: publish this build to both marketplaces.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: vsix
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      # Each upload is guarded by a query for that exact version, because a
+      # marketplace rejects a re-upload of a version it already holds. Without
+      # the guard, re-running a tag whose first half succeeded could never get
+      # past the half that already worked.
+      - name: Publish to the VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # The query fails outright until the extension exists at all, which is
+          # exactly the state the very first release runs in. That is a "not
+          # published" answer, not an error.
+          npx --yes @vscode/vsce@3.9.2 show smoochy.better-codebase-memory-mcp --json > listing.json || echo '{}' > listing.json
+          published="$(node -e 'const v=require("./listing.json").versions||[];console.log(v.some(x=>x.version===process.env.VERSION)?"yes":"no")')"
+          if [ "$published" = "yes" ]; then
+            echo "$VERSION is already on the VS Code Marketplace, skipping"
+          else
+            npx --yes @vscode/vsce@3.9.2 publish --no-dependencies --packagePath ./*.vsix
+          fi
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          status="$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://open-vsx.org/api/smoochy/better-codebase-memory-mcp/$VERSION")"
+          if [ "$status" = "200" ]; then
+            echo "$VERSION is already on Open VSX, skipping"
+          else
+            npx --yes ovsx@1.1.0 publish ./*.vsix --pat "$OVSX_PAT"
+          fi
