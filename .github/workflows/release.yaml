@@ -21,6 +21,7 @@ jobs:
   # the publish job enters.
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     outputs:
@@ -96,6 +97,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: release
     permissions:
       contents: read
