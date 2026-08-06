@@ -1,6 +1,8 @@
 # Better Codebase Memory MCP
 
-![Version](https://img.shields.io/badge/version-0.9.7-blue) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smoochy.better-codebase-memory-mcp?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=smoochy.better-codebase-memory-mcp) [![Open VSX](https://img.shields.io/open-vsx/v/smoochy/better-codebase-memory-mcp?label=Open%20VSX)](https://open-vsx.org/extension/smoochy/better-codebase-memory-mcp) [![CI](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-smoochy-7CC6FE?logo=ko-fi&logoColor=000000)](https://ko-fi.com/smoochy) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-smoochy84-E9C46A?logo=buymeacoffee&logoColor=000000)](https://www.buymeacoffee.com/smoochy84)
 
 VS Code panel for operating the `codebase-memory-mcp` engine: install the CLI, register it as an MCP server, watch what it has indexed, and keep it current - without leaving the editor or memorising a command.
 

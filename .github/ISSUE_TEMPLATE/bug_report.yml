@@ -1,0 +1,75 @@
+name: Bug report
+description: Something in the extension does not work as described
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The extension log is the single most useful thing you can attach. Open the panel, set `betterCmm.logLevel` to `debug`, reproduce the problem, then copy the relevant lines from the **Better Codebase Memory MCP** output channel.
+
+        Indexing results, graph contents, and MCP server responses come from the upstream CLI. If the extension shows a CLI error verbatim, that report belongs at [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp/issues).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence of actions in the panel that shows the problem.
+      placeholder: |
+        1. Open the Codebase Memory panel
+        2. Press Add Project on a repository with ...
+        3. The card shows ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the extension?
+      options:
+        - Setup / installing the CLI
+        - MCP server registration
+        - Updates (new CLI release, checksum, download)
+        - Projects (add, remove, reindex, auto reindex)
+        - Statistics and panel display
+        - Settings
+        - Logging
+        - Something else / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: binary-source
+    attributes:
+      label: "`betterCmm.binarySource`"
+      description: Whether the extension manages the binary or defers to your own installation changes what it is allowed to do.
+      options:
+        - auto
+        - managed
+        - external
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Extension log
+      description: Relevant lines from the output channel, ideally captured at `debug` level. Auto-formatted as code, no backticks needed.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Extension version, VS Code version, and the CLI version the panel reports.
+      placeholder: "extension 1.0.0, VS Code 1.96.0, CLI 0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.2 / Windows 11 / Ubuntu 24.04"
+    validations:
+      required: true
