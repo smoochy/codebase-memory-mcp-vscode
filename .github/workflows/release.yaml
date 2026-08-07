@@ -43,7 +43,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
 
@@ -107,7 +107,7 @@ jobs:
           name: vsix
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
 
       # Each upload is guarded by a query for that exact version, because a
       # marketplace rejects a re-upload of a version it already holds. Without
