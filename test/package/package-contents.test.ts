@@ -39,7 +39,7 @@ describe('packaged contents', () => {
 
   it('ships only the runtime bundle, the manifest and documentation', () => {
     // Anything outside these is either a mistake or wants a deliberate rule.
-    const allowed = /^(dist\/|media\/|package\.json$|readme\.md$|changelog\.md$|LICENSE|docs\/)/i
+    const allowed = /^(dist\/|media\/|package\.json$|readme\.md$|changelog\.md$|security\.md$|LICENSE|docs\/)/i
     const unexpected = files.filter((f) => !allowed.test(f))
     assert.deepEqual(unexpected, [], 'unexpected files in the package')
   })
