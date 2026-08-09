@@ -8,6 +8,30 @@ export interface FileOps {
 }
 
 /**
+ * Which `tar` to run.
+ *
+ * Windows ships bsdtar as `System32\tar.exe` and it is named in full, because
+ * bare `tar` resolves through PATH and Git for Windows puts GNU tar ahead of
+ * it. GNU tar reads `D:\...` as `host:path` and answers a local archive with
+ * "Cannot connect to D: resolve failed", so which tar runs is not the user's
+ * PATH order to decide. Naming it in full also means no earlier PATH entry can
+ * substitute a different program for it.
+ *
+ * Elsewhere `tar` is the system's own and PATH is the right way to find it.
+ */
+export function tarCommand(
+  platform: NodeJS.Platform,
+  systemRoot: string | undefined,
+  exists: (p: string) => boolean,
+): string {
+  if (platform !== 'win32') {
+    return 'tar'
+  }
+  const bsdtar = `${(systemRoot ?? 'C:\\Windows').replace(/\\/g, '/').replace(/\/+$/, '')}/System32/tar.exe`
+  return exists(bsdtar) ? bsdtar : 'tar'
+}
+
+/**
  * Command that unpacks the release archive.
  *
  * `tar` handles both formats and ships with Windows 10 build 17063 and later,
@@ -17,12 +41,13 @@ export interface FileOps {
 export function extractCommand(
   archive: string,
   targetDir: string,
+  command = 'tar',
 ): { command: string; args: string[] } {
   if (archive.endsWith('.tar.gz')) {
-    return { command: 'tar', args: ['-xzf', archive, '-C', targetDir] }
+    return { command, args: ['-xzf', archive, '-C', targetDir] }
   }
   if (archive.endsWith('.zip')) {
-    return { command: 'tar', args: ['-xf', archive, '-C', targetDir] }
+    return { command, args: ['-xf', archive, '-C', targetDir] }
   }
   throw new Error(`unsupported archive format: ${archive}`)
 }

@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { extractCommand, replaceBinary, type FileOps } from '../../src/binary/install'
+import { extractCommand, replaceBinary, tarCommand, type FileOps } from '../../src/binary/install'
 
 /** In-memory file system that records every operation in order. */
 function memoryOps(initial: string[] = []): FileOps & { files: Set<string>; log: string[] } {
@@ -48,8 +48,42 @@ describe('extractCommand', () => {
     })
   })
 
+  it('runs the tar it is given', () => {
+    assert.deepEqual(extractCommand('C:/tmp/a.zip', 'C:/out', 'C:/Windows/System32/tar.exe'), {
+      command: 'C:/Windows/System32/tar.exe',
+      args: ['-xf', 'C:/tmp/a.zip', '-C', 'C:/out'],
+    })
+  })
+
   it('rejects an unknown archive format rather than guessing', () => {
     assert.throws(() => extractCommand('/tmp/a.rar', '/out'), /unsupported archive/i)
+  })
+})
+
+describe('tarCommand', () => {
+  const present = () => true
+  const absent = () => false
+
+  // GNU tar from Git for Windows shadows bsdtar on PATH and reads a drive
+  // letter as a remote host, so the archive never opens.
+  it('names the Windows bsdtar in full rather than resolving through PATH', () => {
+    assert.equal(
+      tarCommand('win32', 'C:\\Windows', present),
+      'C:/Windows/System32/tar.exe',
+    )
+  })
+
+  it('honours a relocated SystemRoot', () => {
+    assert.equal(tarCommand('win32', 'E:\\Win', present), 'E:/Win/System32/tar.exe')
+  })
+
+  it('falls back to PATH when Windows carries no bsdtar', () => {
+    assert.equal(tarCommand('win32', 'C:\\Windows', absent), 'tar')
+  })
+
+  it('leaves PATH to find tar off Windows', () => {
+    assert.equal(tarCommand('darwin', undefined, present), 'tar')
+    assert.equal(tarCommand('linux', undefined, present), 'tar')
   })
 })
 

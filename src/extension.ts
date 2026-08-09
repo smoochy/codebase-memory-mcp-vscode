@@ -657,6 +657,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     arch: process.arch,
     storageDir,
     installPath: managedBinaryPath(homedir(), process.platform),
+    systemRoot: process.env['SystemRoot'],
     // The steps of an install - the URL fetched, the path written - are detail.
     // What the user did and what came of it is logged at info by the caller.
     log: debug,

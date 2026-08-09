@@ -773,6 +773,19 @@ function settingsScreen(model: PanelModel, nonce: string): string {
   )
 }
 
+/**
+ * The two log buttons, on every screen that has an Actions section.
+ *
+ * Setup gets them too: an install that fails names a log file, and the panel is
+ * the only place the user can be told where that log is.
+ */
+function logActions(): string[] {
+  return [
+    button('betterCmm.showLogs', 'View extension log', 'logs'),
+    button('betterCmm.showEngineLogs', 'View engine logs', 'logs'),
+  ]
+}
+
 /** Header, notices, actions, project list. Static markup, no framework. */
 export function renderBody(model: PanelModel, nonce: string): string {
   const { state } = model
@@ -795,7 +808,10 @@ export function renderBody(model: PanelModel, nonce: string): string {
           '<li>Installs the binary from ' +
           `<a href="${escapeHtml(upstreamRepoUrl())}">the upstream project</a></li>` +
           '<li>Registers it as an MCP server</li>' +
-          '</ul>',
+          '</ul>' +
+          // Setup is the screen a failing install leaves the user on, and the
+          // failure names a log the user has no way to find otherwise.
+          `<div class="actions grid">${logActions().join('')}</div>`,
       ),
     )
     return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -908,11 +924,6 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // No Refresh button here: the title bar already has one, running the same
   // command, and two identical controls in one view only raise the question of
   // how they differ.
-  const logActions = [
-    button('betterCmm.showLogs', 'View extension log', 'logs'),
-    button('betterCmm.showEngineLogs', 'View engine logs', 'logs'),
-  ]
-
   parts.push(
     section(
       'Actions',
@@ -921,7 +932,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           ? ''
           : `<div class="actions grid">${updateActions.join('')}</div>`) +
         `<div class="actions grid">${projectActions.join('')}</div>` +
-        `<div class="actions grid">${logActions.join('')}</div>`,
+        `<div class="actions grid">${logActions().join('')}</div>`,
     ),
   )
   parts.push(
