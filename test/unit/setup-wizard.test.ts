@@ -10,6 +10,7 @@ const state = (over: Partial<StateInput>) =>
     managedPath: null,
     externalPath: null,
     registration: { kind: 'unknown' },
+    platform: 'win32',
     ...over,
   })
 const ids = (...args: Parameters<typeof wizardSteps>) => wizardSteps(...args).map((s) => s.id)
@@ -72,6 +73,7 @@ describe('wizardSteps', () => {
           for (const registration of [
             { kind: 'missing' as const },
             { kind: 'present' as const, path: MANAGED },
+            { kind: 'present' as const, path: 'C:/other/path' },
             { kind: 'present' as const, path: '/other/path' },
             { kind: 'unknown' as const },
           ]) {
@@ -104,7 +106,7 @@ describe('wizardSteps', () => {
     const s = state({
       source: 'managed',
       managedPath: MANAGED,
-      registration: { kind: 'present', path: '/other/path' },
+      registration: { kind: 'present', path: 'C:/other/path' },
     })
     assert.deepEqual(ids(s, true), ['resolve-path-conflict'])
   })
@@ -113,9 +115,21 @@ describe('wizardSteps', () => {
     const s = state({
       source: 'managed',
       managedPath: MANAGED,
-      registration: { kind: 'present', path: '/other/path' },
+      registration: { kind: 'present', path: 'C:/other/path' },
     })
     assert.deepEqual(ids(s, false), ['resolve-path-conflict', 'add-projects'])
+  })
+
+  // The entry names a path from another operating system, which is a dead
+  // server rather than a wrong copy, so it gets its own step.
+  it('emits reregister-foreign-entry when the entry belongs to another platform', () => {
+    const s = state({
+      source: 'managed',
+      managedPath: MANAGED,
+      registration: { kind: 'present', path: '/Users/x/.local/bin/cmm' },
+    })
+    assert.deepEqual(ids(s, true), ['reregister-foreign-entry'])
+    assert.deepEqual(ids(s, false), ['reregister-foreign-entry', 'add-projects'])
   })
 
   it('leaves a conflict-free state unaffected', () => {

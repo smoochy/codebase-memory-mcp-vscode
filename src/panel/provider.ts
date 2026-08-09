@@ -175,6 +175,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
         effectiveSource: 'managed',
         notice: null,
         pathConflict: null,
+        foreignPlatformEntry: null,
       },
       projects: [],
       version: null,

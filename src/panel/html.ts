@@ -816,6 +816,25 @@ export function renderBody(model: PanelModel, nonce: string): string {
     )
   }
 
+  // Settings Sync carries mcp.json between machines, and it holds one absolute
+  // path, so the fix and the reason it keeps coming back are said together:
+  // re-registering here is correct for this machine and breaks the other one
+  // until that category stops syncing.
+  if (state.foreignPlatformEntry !== null) {
+    parts.push(
+      notice(
+        'warning',
+        `The MCP entry names ${state.foreignPlatformEntry.entryPath}, a path from another operating system, ` +
+          `so the server cannot start here. This machine's binary is ${state.foreignPlatformEntry.activePath}.`,
+      ),
+      notice(
+        'info',
+        'Settings Sync copied that entry from your other machine. Registering here rewrites it and ' +
+          'breaks the other machine in turn, until you switch "MCP Servers" off under Settings Sync.',
+      ),
+    )
+  }
+
   if (state.kind === 'binary-not-registered') {
     parts.push(notice('warning', 'The binary is not registered as an MCP server.'))
   }
@@ -835,6 +854,16 @@ export function renderBody(model: PanelModel, nonce: string): string {
   const buttons: string[] = []
   if (actions.showInstallButton) {
     buttons.push(button('betterCmm.installCli', 'Register MCP server', 'link', 'primary'))
+  }
+  // The entry is present, so `showInstallButton` is off - but it points at
+  // another machine, which is the one case where rewriting a registration that
+  // exists is the fix. Reuses the register command rather than a new one.
+  if (state.foreignPlatformEntry !== null && !actions.showInstallButton) {
+    buttons.push(
+      actions.mayWriteMcpConfig
+        ? button('betterCmm.installCli', 'Register on this machine', 'link', 'primary')
+        : button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'),
+    )
   }
   if (actions.showClipboardHint) {
     parts.push(

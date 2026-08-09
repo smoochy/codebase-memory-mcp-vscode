@@ -273,6 +273,14 @@
           "description": "Check GitHub for a newer release of the managed binary on startup.",
           "order": 9
         },
+        "betterCmm.autoReregisterMcpEntry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Re-register the MCP server automatically when the entry names another operating system's path, instead of showing a notice.",
+          "markdownDescription": "Re-register the MCP server automatically when the entry names another operating system's path, instead of showing a notice. Settings Sync copies `mcp.json` between machines and it holds one absolute path, so two synced machines rewrite it for each other; turning this on makes that silent and self-healing rather than visible. Machine-scoped, so the other machine does not inherit the choice.",
+          "scope": "machine",
+          "order": 10
+        },
         "betterCmm.logLevel": {
           "type": "string",
           "enum": [
@@ -283,7 +291,7 @@
           ],
           "default": "info",
           "description": "Lowest severity written to the extension log. Debug records every action.",
-          "order": 10
+          "order": 11
         },
         "betterCmm.logMaxSizeMb": {
           "type": "number",
@@ -291,7 +299,7 @@
           "minimum": 1,
           "maximum": 100,
           "description": "Size in megabytes a log file may reach before it is rotated.",
-          "order": 11
+          "order": 12
         },
         "betterCmm.logKeptFiles": {
           "type": "number",
@@ -299,7 +307,7 @@
           "minimum": 1,
           "maximum": 20,
           "description": "How many rotated log files to keep besides the current one.",
-          "order": 12
+          "order": 13
         }
       }
     }

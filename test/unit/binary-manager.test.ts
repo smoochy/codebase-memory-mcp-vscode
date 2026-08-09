@@ -266,6 +266,7 @@ describe('refusesManagedInstall', () => {
     managedPath: '/storage/bin/codebase-memory-mcp',
     externalPath: null,
     registration: { kind: 'present', path: '/storage/bin/codebase-memory-mcp' },
+    platform: 'linux',
   })
 
   const externalState: ExtensionState = computeState({
@@ -273,6 +274,7 @@ describe('refusesManagedInstall', () => {
     managedPath: null,
     externalPath: '/home/user/.local/bin/codebase-memory-mcp',
     registration: { kind: 'present', path: '/home/user/.local/bin/codebase-memory-mcp' },
+    platform: 'linux',
   })
 
   it('refuses when the setting is forced to external, regardless of state', () => {
