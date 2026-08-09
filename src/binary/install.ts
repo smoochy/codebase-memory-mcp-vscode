@@ -101,7 +101,22 @@ export function replaceBinary(
         // Still locked by a running process. The rename below will report it.
       }
     }
-    ops.rename(target, backup)
+    try {
+      ops.rename(target, backup)
+    } catch (cause) {
+      // Nothing has been replaced yet, so the only trace to clear is the file
+      // staged above; saying so is what keeps a locked binary from reading as
+      // a half-finished install.
+      try {
+        ops.remove(staged)
+      } catch {
+        // Leftover scratch next to the target; harmless and replaced next time.
+      }
+      throw new Error(
+        `the installed binary could not be moved aside, so it is unchanged and still in use: ${String(cause)}`,
+        { cause },
+      )
+    }
     movedAside = true
   }
 

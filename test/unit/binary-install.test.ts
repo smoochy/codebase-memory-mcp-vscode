@@ -191,6 +191,29 @@ describe('replaceBinary', () => {
     assert.ok(!ops.files.has('C:/bin/cmm.exe.old'))
   })
 
+  // A target another process holds open fails on the move-aside, before anything
+  // has been replaced. Saying "restore the backup by hand" there would name a
+  // file that was never created, and the staged copy has to go with it.
+  it('reports an unchanged installation when the target cannot be moved aside', () => {
+    const ops = memoryOps(['C:/bin/cmm.exe'])
+    const locked: FileOps = {
+      ...ops,
+      rename(from, to) {
+        if (to === 'C:/bin/cmm.exe.old') {
+          throw new Error('EBUSY: resource busy or locked')
+        }
+        ops.rename(from, to)
+      },
+    }
+    assert.throws(
+      () => replaceBinary('C:/bin/cmm.exe', DATA, 'win32', locked),
+      /could not be moved aside, so it is unchanged/,
+    )
+    assert.ok(ops.files.has('C:/bin/cmm.exe'), 'the installed binary must be untouched')
+    assert.ok(!ops.files.has('C:/bin/cmm.exe.new'), 'the staged file must not be left behind')
+    assert.ok(!ops.files.has('C:/bin/cmm.exe.old'))
+  })
+
   it('tolerates a locked .old file, since the removal is best effort', () => {
     const ops = memoryOps(['C:/bin/cmm.exe'])
     const lockedRemove: FileOps = {
