@@ -19,7 +19,7 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | # | Area | What to do | Expected | Priority |
 |---|---|---|---|---|
 | 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking |
-| 2 | Download | Run setup, choose `managed` | Binary lands in global storage, checksum verified, no terminal prompt | Blocking |
+| 2 | Download | Run setup, choose `managed` | Binary lands in global storage, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking |
 | 8 | MCP entry | After `install`, restart VS Code, check the MCP server list | `codebase-memory-mcp` present and starts | Blocking |
 | 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking |
