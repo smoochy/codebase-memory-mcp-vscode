@@ -97,6 +97,8 @@ function indexReport(payload: unknown, before?: { nodes?: number; edges?: number
  */
 const OWNED_INSTALL_KEY = 'betterCmm.managedInstallPath'
 const INDEX_RECORDS_KEY = 'betterCmm.indexRecords'
+/** The binary-and-foreign-entry pair we last re-registered over, if any. */
+const AUTO_REREGISTER_KEY = 'betterCmm.autoReregisteredOver'
 
 
 function resolveState(storageDir: string, ownedInstallPath: string | null): ExtensionState {
@@ -140,6 +142,7 @@ function resolveState(storageDir: string, ownedInstallPath: string | null): Exte
         profileDir: activeProfileDir(storageDir),
       }).map(readTextOrNull),
     ),
+    platform: process.platform,
   })
 }
 
@@ -415,8 +418,55 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // an update taken and a later one found are two separate records.
   let updateLogged = false
 
+  /** Guards against a second automatic re-registration starting while one runs. */
+  let autoRegisterInFlight = false
+
+  /**
+   * Re-register the MCP entry ourselves when it belongs to another machine.
+   *
+   * Two synced machines rewrite the entry for each other, so the attempt is
+   * remembered per binary-and-entry pair, in global state rather than a session
+   * flag: the same foreign path arriving again after a restart is the ping-pong
+   * and is left alone, while a genuinely new one is still handled. A failure is
+   * not remembered, so fixing whatever broke lets the next refresh try again.
+   */
+  const autoReregister = async (state: ExtensionState): Promise<boolean> => {
+    if (
+      state.foreignPlatformEntry === null ||
+      state.effectiveSource !== 'managed' ||
+      autoRegisterInFlight ||
+      !setting('autoReregisterMcpEntry', false)
+    ) {
+      return false
+    }
+    const attempt = `${state.activePath ?? ''}<-${state.foreignPlatformEntry.entryPath}`
+    if (context.globalState.get<string>(AUTO_REREGISTER_KEY) === attempt) {
+      return false
+    }
+    autoRegisterInFlight = true
+    try {
+      const result = await registerMcp()
+      if (!result.ok) {
+        warn(`automatic re-registration failed: ${result.error}`)
+        return false
+      }
+      await context.globalState.update(AUTO_REREGISTER_KEY, attempt)
+      restartRequired = true
+      log(
+        `the MCP entry named ${state.foreignPlatformEntry.entryPath}, from another machine, ` +
+          'and was re-registered here automatically.',
+      )
+      return true
+    } finally {
+      autoRegisterInFlight = false
+    }
+  }
+
   const refresh = async (): Promise<void> => {
-    const state = resolveState(storageDir, ownedInstallPath())
+    let state = resolveState(storageDir, ownedInstallPath())
+    if (await autoReregister(state)) {
+      state = resolveState(storageDir, ownedInstallPath())
+    }
     let version: string | null = null
     let updateAvailable: string | null = null
 

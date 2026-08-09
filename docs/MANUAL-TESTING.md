@@ -40,6 +40,8 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 6 | Add repositories | Add several folders at once | All indexed, `workspaceFolders` unchanged, no folder added to the workspace | Blocking |
 | 7 | Remove project | Remove a project | Confirmation mentions the index only, never the workspace | Blocking |
 | 9 | Path conflict | Point the MCP entry at a different binary by hand | Warning shown, nothing changed automatically | Important |
+| 14 | Foreign-platform entry | Hand-edit the MCP entry to the other operating system's path (`/Users/...` on Windows, `C:\...` on macOS) | Its own warning, not the #9 one: the entry is named as another machine's, the Settings Sync pointer is shown, and a "Register on this machine" button appears | Blocking |
+| 15 | Automatic re-registration | Turn `betterCmm.autoReregisterMcpEntry` on, repeat #14 | The entry is rewritten without a prompt, the reload notice appears, and the extension log records it once - not on every refresh tick | Important |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
 | 13 | Clipboard | Run the copy commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 

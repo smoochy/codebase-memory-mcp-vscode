@@ -3,6 +3,7 @@ import {
   allowedActions,
   updateOffer,
   computeState,
+  entryPathPlatform,
   type RegistrationStatus,
   type StateInput,
 } from '../../src/state/machine'
@@ -18,6 +19,7 @@ const input = (over: Partial<StateInput> = {}): StateInput => ({
   managedPath: null,
   externalPath: null,
   registration: unknown,
+  platform: 'win32',
   ...over,
 })
 
@@ -120,6 +122,72 @@ describe('computeState', () => {
       }),
     )
     assert.equal(state.pathConflict, null)
+  })
+
+  // Settings Sync carries mcp.json between machines and it holds one absolute
+  // path, so the second machine inherits an entry that names a binary it does
+  // not have. That is a different failure from a same-platform mismatch: the
+  // server is dead rather than aimed at the wrong copy.
+  it('reports a POSIX entry on Windows as a foreign-platform entry', () => {
+    const state = computeState(
+      input({
+        source: 'managed',
+        managedPath: MANAGED,
+        registration: present('/Users/x/.local/bin/codebase-memory-mcp'),
+      }),
+    )
+    assert.equal(state.pathConflict, null)
+    assert.deepEqual(state.foreignPlatformEntry, {
+      entryPath: '/Users/x/.local/bin/codebase-memory-mcp',
+      activePath: MANAGED,
+    })
+  })
+
+  it('reports a Windows entry on POSIX as a foreign-platform entry', () => {
+    const state = computeState(
+      input({
+        platform: 'darwin',
+        source: 'managed',
+        managedPath: '/Users/x/.local/bin/codebase-memory-mcp',
+        registration: present(MANAGED),
+      }),
+    )
+    assert.equal(state.pathConflict, null)
+    assert.equal(state.foreignPlatformEntry?.entryPath, MANAGED)
+  })
+
+  it('keeps a same-platform mismatch as a plain path conflict', () => {
+    const state = computeState(
+      input({ source: 'managed', managedPath: MANAGED, registration: present(EXTERNAL) }),
+    )
+    assert.equal(state.foreignPlatformEntry, null)
+    assert.deepEqual(state.pathConflict, { entryPath: EXTERNAL, activePath: MANAGED })
+  })
+
+  it('keeps an unrecognisable entry path as a plain path conflict', () => {
+    const state = computeState(
+      input({ source: 'managed', managedPath: MANAGED, registration: present('codebase-memory-mcp') }),
+    )
+    assert.equal(state.foreignPlatformEntry, null)
+    assert.equal(state.pathConflict?.entryPath, 'codebase-memory-mcp')
+  })
+})
+
+describe('entryPathPlatform', () => {
+  it('reads a drive letter or a UNC prefix as Windows', () => {
+    assert.equal(entryPathPlatform('C:\\bin\\codebase-memory-mcp.exe'), 'win32')
+    assert.equal(entryPathPlatform('c:/bin/codebase-memory-mcp.exe'), 'win32')
+    assert.equal(entryPathPlatform('\\\\server\\share\\codebase-memory-mcp.exe'), 'win32')
+  })
+
+  it('reads a leading slash as POSIX', () => {
+    assert.equal(entryPathPlatform('/usr/local/bin/codebase-memory-mcp'), 'posix')
+  })
+
+  it('refuses to guess at anything else', () => {
+    assert.equal(entryPathPlatform('codebase-memory-mcp'), null)
+    assert.equal(entryPathPlatform('./bin/codebase-memory-mcp'), null)
+    assert.equal(entryPathPlatform(''), null)
   })
 })
 

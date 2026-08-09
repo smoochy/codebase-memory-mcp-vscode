@@ -7,6 +7,7 @@ export type WizardStepId =
   | 'register-mcp'
   | 'copy-install-command'
   | 'resolve-path-conflict'
+  | 'reregister-foreign-entry'
   | 'add-projects'
   | 'done'
 
@@ -40,6 +41,11 @@ const STEPS: Record<WizardStepId, Omit<WizardStep, 'id'>> = {
   'resolve-path-conflict': {
     title: 'Resolve the registered path',
     detail: 'The MCP entry points at a different binary than the active one. Re-run the install command so the entry matches.',
+  },
+  'reregister-foreign-entry': {
+    title: 'Register the MCP server on this machine',
+    detail:
+      'The MCP entry was written on another operating system, so the binary it names is not here. Register it again to point the entry at this machine.',
   },
   'add-projects': {
     title: 'Add repositories',
@@ -77,6 +83,10 @@ export function wizardSteps(state: ExtensionState, hasProjects: boolean): Wizard
 
   if (state.pathConflict !== null) {
     ids.push('resolve-path-conflict')
+  }
+
+  if (state.foreignPlatformEntry !== null) {
+    ids.push('reregister-foreign-entry')
   }
 
   if (!hasProjects) {

@@ -20,6 +20,7 @@ export interface StateInput {
   managedPath: string | null
   externalPath: string | null
   registration: RegistrationStatus
+  platform: NodeJS.Platform
 }
 
 export interface ExtensionState {
@@ -29,6 +30,15 @@ export interface ExtensionState {
   /** User-visible note, for example the fallback from external to managed. */
   notice: string | null
   pathConflict: { entryPath: string; activePath: string } | null
+  /**
+   * The MCP entry names a path belonging to another operating system.
+   *
+   * Kept apart from `pathConflict` because the two are different failures:
+   * a same-platform mismatch points at a binary that could exist, while this
+   * one cannot be reached at all, and re-registering here breaks the machine
+   * that wrote it. Mutually exclusive with `pathConflict`.
+   */
+  foreignPlatformEntry: { entryPath: string; activePath: string } | null
 }
 
 export interface AllowedActions {
@@ -45,6 +55,19 @@ export function samePath(a: string, b: string): boolean {
 }
 
 /**
+ * Which operating system's path shape this is, or null when it fits neither.
+ *
+ * Decided by shape alone, never by probing the filesystem: the whole point of
+ * the foreign-entry case is a path that is absent here.
+ */
+export function entryPathPlatform(path: string): 'win32' | 'posix' | null {
+  if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\')) {
+    return 'win32'
+  }
+  return path.startsWith('/') ? 'posix' : null
+}
+
+/**
  * Derive the current state. Pure: every input is passed in, nothing is probed.
  *
  * Under `auto` an installation this extension made wins, and any other
@@ -53,7 +76,7 @@ export function samePath(a: string, b: string): boolean {
  * CLI's own installer writes to the same directory.
  */
 export function computeState(input: StateInput): ExtensionState {
-  const { source, managedPath, externalPath, registration } = input
+  const { source, managedPath, externalPath, registration, platform } = input
 
   let activePath: string | null = null
   let effectiveSource: 'managed' | 'external' | null = null
@@ -104,20 +127,44 @@ export function computeState(input: StateInput): ExtensionState {
       effectiveSource: null,
       notice,
       pathConflict: null,
+      foreignPlatformEntry: null,
     }
   }
 
   // A binary without an MCP entry never starts, because VS Code owns the server.
   if (registration.kind === 'missing') {
-    return { kind: 'binary-not-registered', activePath, effectiveSource, notice, pathConflict: null }
+    return {
+      kind: 'binary-not-registered',
+      activePath,
+      effectiveSource,
+      notice,
+      pathConflict: null,
+      foreignPlatformEntry: null,
+    }
   }
 
-  const pathConflict =
+  const mismatch =
     registration.kind === 'present' && !samePath(registration.path, activePath)
       ? { entryPath: registration.path, activePath }
       : null
 
-  return { kind, activePath, effectiveSource, notice, pathConflict }
+  // Settings Sync syncs mcp.json, which holds one absolute command path, so a
+  // second machine on another operating system inherits an entry it can never
+  // start. An unrecognisable shape stays a plain conflict rather than being
+  // guessed at as foreign.
+  const foreign =
+    mismatch !== null &&
+    entryPathPlatform(mismatch.entryPath) !== null &&
+    entryPathPlatform(mismatch.entryPath) !== (platform === 'win32' ? 'win32' : 'posix')
+
+  return {
+    kind,
+    activePath,
+    effectiveSource,
+    notice,
+    pathConflict: foreign ? null : mismatch,
+    foreignPlatformEntry: foreign ? mismatch : null,
+  }
 }
 
 /**

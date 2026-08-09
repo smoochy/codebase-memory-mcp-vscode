@@ -88,6 +88,7 @@ describe('packaged contents', () => {
             effectiveSource: 'managed',
             notice: null,
             pathConflict: null,
+            foreignPlatformEntry: null,
           },
           projects: [],
           version: null,

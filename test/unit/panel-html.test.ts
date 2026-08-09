@@ -20,6 +20,7 @@ const model = (over: Partial<PanelModel> = {}): PanelModel => ({
     managedPath: MANAGED,
     externalPath: null,
     registration: { kind: 'present', path: MANAGED },
+    platform: 'win32',
   }),
   projects: [],
   version: '0.9.0',
@@ -162,6 +163,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: null,
       registration: { kind: 'unknown' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state }), 'n1')
     assert.match(html, /data-command="betterCmm.runSetup"/)
@@ -174,6 +176,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: null,
       registration: { kind: 'unknown' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state, setupProgress: 42.4 }), 'n1')
     assert.match(html, /class="action primary setup progress"/)
@@ -187,6 +190,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: null,
       registration: { kind: 'unknown' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state, setupProgress: 90 }), 'n1')
     assert.match(html, /<span class="pct">Installing\.\.\.<\/span>/)
@@ -198,6 +202,7 @@ describe('renderBody', () => {
       managedPath: MANAGED,
       externalPath: null,
       registration: { kind: 'missing' },
+      platform: 'win32',
     })
     assert.match(renderBody(model({ state: unregistered }), 'n1'), /betterCmm.installCli/)
     assert.doesNotMatch(renderBody(model(), 'n1'), /betterCmm.installCli/)
@@ -209,6 +214,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: '/usr/bin/cmm',
       registration: { kind: 'missing' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state: external }), 'n1')
     assert.match(html, /betterCmm.copyInstallCommand/)
@@ -221,6 +227,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: '/usr/bin/cmm',
       registration: { kind: 'present', path: '/usr/bin/cmm' },
+      platform: 'win32',
     })
     // The command name also appears in the click handler script, which ships
     // unconditionally, so the assertion is on the button rather than the string.
@@ -236,6 +243,7 @@ describe('renderBody', () => {
       managedPath: null,
       externalPath: '/usr/bin/cmm',
       registration: { kind: 'present', path: '/usr/bin/cmm' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state: external, updateAvailable: '0.9.1' }), 'n1')
     assert.match(html, /class="action warning hint" title="[^"]*update it yourself/)
@@ -342,6 +350,7 @@ describe('renderBody', () => {
       managedPath: MANAGED,
       externalPath: null,
       registration: { kind: 'missing' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state: unregistered }), 'n1')
     assert.match(html, /not registered/)
@@ -370,6 +379,7 @@ describe('renderBody', () => {
       managedPath: MANAGED,
       externalPath: null,
       registration: { kind: 'present', path: MANAGED },
+      platform: 'win32',
     })
     assert.match(renderBody(model({ state: fallback }), 'n1'), /falling back/i)
   })
@@ -379,11 +389,58 @@ describe('renderBody', () => {
       source: 'managed',
       managedPath: MANAGED,
       externalPath: null,
-      registration: { kind: 'present', path: '/other/cmm' },
+      registration: { kind: 'present', path: 'C:/other/cmm' },
+      platform: 'win32',
     })
     const html = renderBody(model({ state: conflict }), 'n1')
-    assert.match(html, /\/other\/cmm/)
+    assert.match(html, /C:\/other\/cmm/)
     assert.doesNotMatch(html, /betterCmm.repair/)
+  })
+
+  // A synced entry from another machine is a dead server, not a wrong copy, so
+  // the panel has to say something the #9 conflict copy does not: which machine
+  // wrote it, and that Settings Sync will keep doing so.
+  it('reports a foreign-platform entry with the Settings Sync pointer and a register button', () => {
+    const foreign = computeState({
+      source: 'managed',
+      managedPath: MANAGED,
+      externalPath: null,
+      registration: { kind: 'present', path: '/Users/x/.local/bin/cmm' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state: foreign }), 'n1')
+    assert.match(html, /\/Users\/x\/\.local\/bin\/cmm/)
+    assert.match(html, /another operating system/i)
+    assert.match(html, /Settings Sync/)
+    assert.match(html, /data-command="betterCmm\.installCli"[^>]*>[\s\S]*?Register on this machine/)
+  })
+
+  it('escapes a hostile foreignPlatformEntry.entryPath', () => {
+    const state: ExtensionState = {
+      kind: 'ready-managed',
+      activePath: MANAGED,
+      effectiveSource: 'managed',
+      notice: null,
+      pathConflict: null,
+      foreignPlatformEntry: { entryPath: XSS_PAYLOAD, activePath: MANAGED },
+    }
+    const html = renderBody(model({ state }), 'n1')
+    assert.ok(!html.includes(XSS_PAYLOAD))
+  })
+
+  // The extension never writes into an installation it does not own, so the
+  // fix an external binary gets is the command, not a button that runs it.
+  it('offers the clipboard command instead when the binary is not managed', () => {
+    const foreign = computeState({
+      source: 'external',
+      managedPath: null,
+      externalPath: 'C:/Users/x/bin/cmm.exe',
+      registration: { kind: 'present', path: '/Users/x/.local/bin/cmm' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state: foreign }), 'n1')
+    assert.match(html, /data-command="betterCmm\.copyInstallCommand"/)
+    assert.doesNotMatch(html, /Register on this machine/)
   })
 
   it('puts the nonce on every script tag', () => {
@@ -403,6 +460,7 @@ describe('renderBody', () => {
       managedPath: XSS_PAYLOAD,
       externalPath: null,
       registration: { kind: 'present', path: XSS_PAYLOAD },
+      platform: 'win32',
     })
     const html = renderBody(model({ state }), 'n1')
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
@@ -419,6 +477,7 @@ describe('renderBody', () => {
       effectiveSource: 'managed',
       notice: XSS_PAYLOAD,
       pathConflict: null,
+      foreignPlatformEntry: null,
     }
     const html = renderBody(model({ state }), 'n1')
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
@@ -565,6 +624,7 @@ describe('renderBody', () => {
         effectiveSource: 'managed',
         notice: null,
         pathConflict: null,
+      foreignPlatformEntry: null,
       },
       projects: [],
       version: '0.9.0',
@@ -703,6 +763,7 @@ describe('renderBody', () => {
       effectiveSource: 'managed',
       notice: null,
       pathConflict: { entryPath: XSS_PAYLOAD, activePath: MANAGED },
+      foreignPlatformEntry: null,
     }
     const html = renderBody(model({ state }), 'n1')
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
@@ -716,6 +777,7 @@ describe('renderBody', () => {
       effectiveSource: 'managed',
       notice: null,
       pathConflict: { entryPath: MANAGED, activePath: XSS_PAYLOAD },
+      foreignPlatformEntry: null,
     }
     const html = renderBody(model({ state }), 'n1')
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
@@ -786,30 +848,35 @@ describe('renderBody', () => {
         managedPath: null,
         externalPath: null,
         registration: { kind: 'unknown' },
+        platform: 'win32',
       }), // needs-setup
       computeState({
         source: 'managed',
         managedPath: MANAGED,
         externalPath: null,
         registration: { kind: 'present', path: MANAGED },
+        platform: 'win32',
       }), // ready-managed
       computeState({
         source: 'external',
         managedPath: null,
         externalPath: '/usr/bin/cmm',
         registration: { kind: 'present', path: '/usr/bin/cmm' },
+        platform: 'win32',
       }), // ready-external
       computeState({
         source: 'managed',
         managedPath: MANAGED,
         externalPath: null,
         registration: { kind: 'missing' },
+        platform: 'win32',
       }), // binary-not-registered
       computeState({
         source: 'external',
         managedPath: MANAGED,
         externalPath: null,
         registration: { kind: 'present', path: MANAGED },
+        platform: 'win32',
       }), // fallback-managed
     ]
 
