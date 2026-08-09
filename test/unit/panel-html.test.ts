@@ -170,6 +170,22 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /class="action primary setup progress"/)
   })
 
+  // A failed install names a log file, and setup is the screen the user is
+  // left on, so it is the one screen that has to offer both logs.
+  it('offers both logs on the setup screen, side by side', () => {
+    const state = computeState({
+      source: 'auto',
+      managedPath: null,
+      externalPath: null,
+      registration: { kind: 'unknown' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state }), 'n1')
+    assert.match(html, /data-command="betterCmm.showLogs"/)
+    assert.match(html, /data-command="betterCmm.showEngineLogs"/)
+    assert.match(html, /class="actions grid pair"/)
+  })
+
   it('renders a running setup install as a filled bar with its percentage', () => {
     const state = computeState({
       source: 'auto',

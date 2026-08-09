@@ -6,13 +6,13 @@
 
 VS Code panel for operating the `codebase-memory-mcp` engine: install the CLI, register it as an MCP server, watch what it has indexed, and keep it current - without leaving the editor or memorising a command.
 
-This extension is the operator's side of the engine. It resolves which binary is in use, verifies and installs releases, registers the MCP server through the CLI's own installer, and reports index state per repository. It is aimed at people who run [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) as day-to-day tooling and want its upkeep - installation, updates, reindexing, logs - to be visible and reversible rather than implicit.
+This extension is the operator's side of the engine. It resolves which binary is in use, verifies and installs releases, registers the MCP server, and reports index state per repository. It is aimed at people who run [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) as day-to-day tooling and want its upkeep - installation, updates, reindexing, logs - to be visible and reversible rather than implicit.
 
 It is an independent, clean-room TypeScript implementation. It is **not affiliated with** the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
 
 ## What it does
 
-- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server by running the CLI's own `install`. The Setup button fills as its own progress bar while the download runs, so the wait is visible without leaving the panel. The extension never writes an MCP entry of its own.
+- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server. The Setup button fills as its own progress bar while the download runs, so the wait is visible without leaving the panel.
 - **Verified updates.** A newer release is announced on the activity bar and in the panel. Taking it downloads the asset, checks it against the release's published SHA-256 checksums, and reports progress on the button that started it.
 - **Project overview.** Nodes, edges, project count and total index size, plus a card per repository with its branch, index time and counts.
 - **Reindexing, manual or on commit.** Reindex one project or all of them. Optional auto reindex watches the checked-out commit rather than the file system, so it acts on a pull instead of on every keystroke.
@@ -25,7 +25,9 @@ VS Code 1.85 or newer. No other runtime dependency: the extension ships zero npm
 
 ## Binary management
 
-The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The CLI's own `install` writes an MCP entry naming an absolute path there, so a binary kept elsewhere would leave that entry pointing at a file that does not exist and the server would never start.
+The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The MCP entry names an absolute path there, so a binary kept elsewhere would leave that entry pointing at a file that does not exist and the server would never start.
+
+Registering runs the CLI's own `install`, which wires up every agent it supports, and then writes the entry into the `mcp.json` of the VS Code installation the extension is running in. That second step is the extension's own: the CLI finds VS Code by walking the default configuration directory, so a second installation started with its own `--user-data-dir` is not among the files it writes. Anything already in that file is kept.
 
 If you already manage your own installation, the extension prefers it and never overwrites it. Because both end up in the same directory, ownership is decided by a record written at install time rather than by the path: a binary the extension did not install is never updated, overwritten, or offered for removal. For such an installation a new release is reported and linked, but no update button appears - that upgrade is yours to run.
 
