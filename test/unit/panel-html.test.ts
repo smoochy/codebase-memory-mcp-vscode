@@ -741,6 +741,14 @@ describe('renderBody', () => {
     assert.match(html, /Reload VS Code/)
   })
 
+  // The toast that says so is collapsed by default, and the update is taken
+  // from the panel, so the panel is where the user is looking.
+  it('warns in the panel that the new binary needs a reload, not that registration does', () => {
+    const html = renderBody(model({ restartRequired: 'binary' }), 'n1')
+    assert.match(html, /Reload VS Code to run the new binary/)
+    assert.doesNotMatch(html, /finish registering/)
+  })
+
   it('does not offer a second Refresh beside the one in the title bar', () => {
     const html = renderBody(model({}), 'n1')
     assert.doesNotMatch(html, /data-command="betterCmm\.refresh"/)

@@ -171,7 +171,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * leaves the server unreachable until a reload. Without saying so, a
    * successful setup looks broken.
    */
-  let restartRequired = false
+  let restartRequired: false | 'registration' | 'binary' = false
 
   /** Path this extension recorded installing, or null when it installed nothing. */
   const ownedInstallPath = (): string | null =>
@@ -456,7 +456,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return false
       }
       await context.globalState.update(AUTO_REREGISTER_KEY, attempt)
-      restartRequired = true
+      restartRequired = 'registration'
       log(
         `the MCP entry named ${state.foreignPlatformEntry.entryPath}, from another machine, ` +
           'and was re-registered here automatically.',
@@ -743,7 +743,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // command was the flow contradicting its own description.
         const registered = await registerMcp()
         if (registered.ok) {
-          restartRequired = true
+          restartRequired = 'registration'
         }
         await refresh()
         // The setup screen is gone with the install; drop the percentage so a
@@ -777,7 +777,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       log('User: register MCP server')
       const result = await registerMcp()
       if (result.ok) {
-        restartRequired = true
+        restartRequired = 'registration'
       }
       await refresh()
       if (!result.ok) {
@@ -947,6 +947,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           throw cause
         }
         log(`update installed ${latestTag} (was ${installed.value})`)
+        // The running server is still the process started from the old binary,
+        // and the toast saying so is collapsed by default. The panel is where
+        // the user just clicked, so it says it too, until the reload.
+        restartRequired = 'binary'
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
         latestTagCache = latestTag

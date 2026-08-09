@@ -33,8 +33,13 @@ export interface PanelModel {
   loading?: boolean
   /** Which screen the panel shows. Anything but `main` replaces the whole view. */
   view?: 'main' | 'settings'
-  /** True after registering, until the window reloads and the entry takes effect. */
-  restartRequired?: boolean
+  /**
+   * What the pending reload is for, until the window reloads and it takes
+   * effect: a registration the server has not picked up, or a new binary the
+   * running server is not the one from. `true` reads as the registration case,
+   * which is what it meant before there was a second one.
+   */
+  restartRequired?: boolean | 'registration' | 'binary'
   /** CLI settings from `config list`, shown on the settings screen. */
   cliSettings?: CliSetting[]
   /** Host platform, so the uninstall block offers the right shell. */
@@ -858,7 +863,14 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // Registering only takes effect once the extension host restarts, so saying
   // it succeeded without saying that would leave the user looking for a server
   // that is not there yet.
-  if (model.restartRequired === true) {
+  if (model.restartRequired === 'binary') {
+    parts.push(
+      notice(
+        'warning',
+        'Reload VS Code to run the new binary - the MCP server is still running the old one.',
+      ),
+    )
+  } else if (model.restartRequired === true || model.restartRequired === 'registration') {
     parts.push(
       notice(
         'warning',
