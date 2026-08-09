@@ -64,49 +64,39 @@ describe('readRegistration', () => {
 })
 
 describe('mcpConfigCandidates', () => {
-  const windows = {
-    platform: 'win32' as NodeJS.Platform,
-    home: 'C:/Users/x',
-    appData: 'C:/Users/x/AppData/Roaming',
-    profileDir: undefined,
-  }
+  const extension = 'smoochy.better-codebase-memory-mcp'
 
-  it('uses the roaming directory on Windows', () => {
-    assert.deepEqual(mcpConfigCandidates(windows), ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'])
+  it('names the sibling of globalStorage on the default profile', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`C:/Users/x/AppData/Roaming/Code/User/globalStorage/${extension}`),
+      ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'],
+    )
   })
 
-  it('falls back to a derived roaming path when APPDATA is unset', () => {
-    assert.deepEqual(mcpConfigCandidates({ ...windows, appData: undefined }), [
-      'C:/Users/x/AppData/Roaming/Code/User/mcp.json',
+  it('names the profile own file on a named profile', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`/home/x/.config/Code/User/profiles/-abc123/globalStorage/${extension}`),
+      ['/home/x/.config/Code/User/profiles/-abc123/mcp.json'],
+    )
+  })
+
+  // The bug this replaced: a home-derived path named the real profile's file
+  // and reported its registration as this instance's.
+  it('follows a custom user-data-dir rather than the home directory', () => {
+    assert.deepEqual(mcpConfigCandidates(`D:/tmp/cmm-test/User/globalStorage/${extension}`), [
+      'D:/tmp/cmm-test/User/mcp.json',
     ])
   })
 
-  it('uses the application support directory on macOS', () => {
-    const candidates = mcpConfigCandidates({
-      platform: 'darwin',
-      home: '/Users/x',
-      appData: undefined,
-      profileDir: undefined,
-    })
-    assert.deepEqual(candidates, ['/Users/x/Library/Application Support/Code/User/mcp.json'])
+  it('accepts backslashes', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`C:\\Users\\x\\AppData\\Roaming\\Code\\User\\globalStorage\\${extension}`),
+      ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'],
+    )
   })
 
-  it('uses the config directory on Linux', () => {
-    const candidates = mcpConfigCandidates({
-      platform: 'linux',
-      home: '/home/x',
-      appData: undefined,
-      profileDir: undefined,
-    })
-    assert.deepEqual(candidates, ['/home/x/.config/Code/User/mcp.json'])
-  })
-
-  it('puts the active profile ahead of the default profile', () => {
-    const candidates = mcpConfigCandidates({ ...windows, profileDir: '-abc123' })
-    assert.deepEqual(candidates, [
-      'C:/Users/x/AppData/Roaming/Code/User/profiles/-abc123/mcp.json',
-      'C:/Users/x/AppData/Roaming/Code/User/mcp.json',
-    ])
+  it('names nothing when the path is not under globalStorage', () => {
+    assert.deepEqual(mcpConfigCandidates('/somewhere/else'), [])
   })
 })
 

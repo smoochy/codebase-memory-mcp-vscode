@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.13]
+
+- The panel now reads the MCP registration of the VS Code instance it is running in. It located `mcp.json` from the home directory before, which named the default installation's file whatever `--user-data-dir` the instance was started with, so a second installation was told about a registration that was not its own.
+
 ## [0.9.12]
 
 - An MCP entry naming another operating system's path is now reported as its own case rather than as a generic path conflict. Settings Sync copies `mcp.json` between machines and it holds one absolute path, so a second machine on a different platform inherits an entry it can never start; the panel now says which machine wrote it, offers to register here, and points at switching "MCP Servers" off under Settings Sync, which is the permanent fix.

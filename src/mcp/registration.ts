@@ -100,54 +100,22 @@ export function readRegistration(text: string | null): RegistrationStatus {
 }
 
 /**
- * Directory name of the active profile, or undefined on the default profile.
+ * Where the VS Code MCP config lives, derived from the extension's own storage
+ * directory.
  *
- * Global storage lives at `User/globalStorage/<publisher>.<name>` by default and
- * at `User/profiles/<id>/globalStorage/<publisher>.<name>` on a named profile,
- * so the profile identifier can be read straight off the storage path.
- */
-export function activeProfileDir(storageDir: string): string | undefined {
-  const match = /\/User\/profiles\/([^/]+)\/globalStorage\//.exec(
-    storageDir.replace(/\\/g, '/'),
-  )
-  return match?.[1]
-}
-
-export interface McpPathEnv {
-  platform: NodeJS.Platform
-  home: string
-  /** APPDATA on Windows, undefined elsewhere or when unset. */
-  appData: string | undefined
-  /** Directory name of the active profile, undefined for the default profile. */
-  profileDir: string | undefined
-}
-
-/**
- * Where the VS Code MCP config may live, most specific first.
+ * Deriving it from the home directory instead names the wrong file for any
+ * instance started with `--user-data-dir`, and reads the real profile's
+ * registration while claiming to describe the running one.
  *
- * Named profiles keep their own `mcp.json` under `User/profiles/<id>/`, so
- * checking only the default path would miss the entry for anyone not on the
- * default profile and wrongly report the server as unregistered.
+ * `mcp.json` is always the sibling of `globalStorage`, which places it under
+ * `User/` on the default profile and under `User/profiles/<id>/` on a named one
+ * without either case being spelled out here.
  */
-export function mcpConfigCandidates(env: McpPathEnv): string[] {
-  const home = env.home.replace(/\\/g, '/').replace(/\/+$/, '')
-
-  let userDir: string
-  if (env.platform === 'win32') {
-    const roaming = (env.appData ?? `${home}/AppData/Roaming`).replace(/\\/g, '/')
-    userDir = `${roaming}/Code/User`
-  } else if (env.platform === 'darwin') {
-    userDir = `${home}/Library/Application Support/Code/User`
-  } else {
-    userDir = `${home}/.config/Code/User`
-  }
-
-  const candidates: string[] = []
-  if (env.profileDir !== undefined && env.profileDir.length > 0) {
-    candidates.push(`${userDir}/profiles/${env.profileDir}/mcp.json`)
-  }
-  candidates.push(`${userDir}/mcp.json`)
-  return candidates
+export function mcpConfigCandidates(storageDir: string): string[] {
+  const storage = storageDir.replace(/\\/g, '/').replace(/\/+$/, '')
+  const marker = '/globalStorage/'
+  const index = storage.lastIndexOf(marker)
+  return index === -1 ? [] : [`${storage.slice(0, index)}/mcp.json`]
 }
 
 /**
