@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.11]
+
+- The Setup button now fills as its own progress bar while the first install downloads, the way the update button already did. The install it runs is the same download, and pressing Setup left nothing on the panel to watch.
 
 - The extension has a listing icon. `media/icon.png` is rasterized from `media/icon-marketplace.svg`, a coloured source kept separate from the `currentColor` activity-bar glyph in `media/icon.svg`, which renders as an invisible shape against a marketplace page.
 - `categories` reads `["AI", "Other"]` rather than the default `["Other"]`, and the manifest carries `keywords` and a `galleryBanner`, so the extension is reachable by search rather than only by name.

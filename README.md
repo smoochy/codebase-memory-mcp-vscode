@@ -12,7 +12,7 @@ It is an independent, clean-room TypeScript implementation. It is **not affiliat
 
 ## What it does
 
-- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server by running the CLI's own `install`. The extension never writes an MCP entry of its own.
+- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server by running the CLI's own `install`. The Setup button fills as its own progress bar while the download runs, so the wait is visible without leaving the panel. The extension never writes an MCP entry of its own.
 - **Verified updates.** A newer release is announced on the activity bar and in the panel. Taking it downloads the asset, checks it against the release's published SHA-256 checksums, and reports progress on the button that started it.
 - **Project overview.** Nodes, edges, project count and total index size, plus a card per repository with its branch, index time and counts.
 - **Reindexing, manual or on commit.** Reindex one project or all of them. Optional auto reindex watches the checked-out commit rather than the file system, so it acts on a pull instead of on every keystroke.

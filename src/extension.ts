@@ -641,13 +641,27 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       const title = firstStep === undefined ? 'Better Codebase Memory MCP' : firstStep.title
 
       try {
-      const { tag } = await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title },
-          async (progress) =>
-            installLatest(
-              installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
-            ),
-        )
+        let tag: string
+        try {
+          // The Setup button turns into its own progress bar, so the percentage
+          // goes there as well as into the notification.
+          panel.setSetupProgress(0)
+          ;({ tag } = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title },
+            async (progress) =>
+              installLatest({
+                ...installDeps((id) => progress.report({ message: wizardStepTitle(id) })),
+                onProgress: (percent) => {
+                  panel.setSetupProgress(percent)
+                },
+              }),
+          ))
+        } catch (cause) {
+          // Only a failure puts the button back: on success the setup screen is
+          // replaced outright, and clearing it first flashes the button once.
+          panel.setSetupProgress(null)
+          throw cause
+        }
         await context.globalState.update(
           OWNED_INSTALL_KEY,
           managedBinaryPath(homedir(), process.platform),
@@ -663,6 +677,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           restartRequired = true
         }
         await refresh()
+        // The setup screen is gone with the install; drop the percentage so a
+        // later one does not start from this one's 100.
+        panel.setSetupProgress(null)
 
         if (registered.ok) {
           void vscode.window.showInformationMessage(
