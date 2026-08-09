@@ -474,6 +474,25 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /Register on this machine/)
   })
 
+  // The Windows spelling starts with the call operator, which Git Bash reads
+  // as a background job, so pasting it there registers nothing.
+  it('offers the register command for Git Bash too where it is installed', () => {
+    const external = computeState({
+      source: 'external',
+      managedPath: null,
+      externalPath: 'C:/Users/x/bin/cmm.exe',
+      registration: { kind: 'missing' },
+      platform: 'win32',
+    })
+    const model_ ={ ...model({ state: external }), platform: 'win32' as const, gitBashAvailable: true }
+    const html = renderBody(model_, 'n1')
+    assert.match(html, /data-command="betterCmm\.copyInstallCommand"/)
+    assert.match(html, /data-command="betterCmm\.copyInstallCommandBash"/)
+
+    const withoutBash = renderBody({ ...model_, gitBashAvailable: false }, 'n1')
+    assert.doesNotMatch(withoutBash, /copyInstallCommandBash/)
+  })
+
   it('puts the nonce on every script tag', () => {
     const html = renderBody(model(), 'n1')
     for (const tag of html.match(/<script[^>]*>/g) ?? []) {

@@ -7,7 +7,12 @@ import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binar
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { installCommandFor, uninstallCommandFor, uninstallCommandForBash } from './constants'
+import {
+  installCommandFor,
+  installCommandForBash,
+  uninstallCommandFor,
+  uninstallCommandForBash,
+} from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
 import { firstRegistration, mcpConfigCandidates, withMcpEntry, NO_CONFIG_FILE } from './mcp/registration'
@@ -802,6 +807,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         installCommandFor(resolveState(storageDir, ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage('Install command copied to the clipboard.')
+    },
+    'betterCmm.copyInstallCommandBash': async () => {
+      await vscode.env.clipboard.writeText(
+        installCommandForBash(resolveState(storageDir, ownedInstallPath()).activePath),
+      )
+      void vscode.window.showInformationMessage('Register command copied for Git Bash.')
     },
     'betterCmm.copyUninstallCommand': async () => {
       // Bound to the resolved binary: the bare name only works when the CLI is

@@ -145,6 +145,11 @@
         "category": "Codebase Memory"
       },
       {
+        "command": "betterCmm.copyInstallCommandBash",
+        "title": "Copy Register Command (Git Bash)",
+        "category": "Codebase Memory"
+      },
+      {
         "command": "betterCmm.removeManagedBinary",
         "title": "Remove Managed Binary",
         "category": "Codebase Memory"

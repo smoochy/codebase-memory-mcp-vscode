@@ -643,6 +643,32 @@ function commandLine(label: string, command: string, copyCommand: string): strin
 }
 
 /**
+ * The buttons that copy the register command.
+ *
+ * The Windows spelling starts with the call operator, which PowerShell needs
+ * and which Git Bash reads as a background job, so a second button carries the
+ * POSIX spelling wherever Git Bash is actually installed. This is the same
+ * split the uninstall block makes, for the same reason.
+ */
+function copyRegisterButtons(model: PanelModel): string {
+  const powershell = button(
+    'betterCmm.copyInstallCommand',
+    model.platform === 'win32' && model.gitBashAvailable === true
+      ? 'Copy register command (PowerShell)'
+      : 'Copy register command',
+    'copy',
+    'primary',
+  )
+  if (model.platform !== 'win32' || model.gitBashAvailable !== true) {
+    return powershell
+  }
+  return (
+    powershell +
+    button('betterCmm.copyInstallCommandBash', 'Copy for Git Bash', 'copy', 'primary')
+  )
+}
+
+/**
  * The uninstall block, rendered inside the settings screen.
  *
  * The extension deliberately does not run the CLI's own uninstall: it asks
@@ -901,7 +927,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
             'link',
             'primary',
           )
-        : button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'),
+        : copyRegisterButtons(model),
     )
   }
   if (actions.showClipboardHint) {
@@ -912,7 +938,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           'Run the register command yourself to finish setup.',
       ),
     )
-    buttons.push(button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'))
+    buttons.push(copyRegisterButtons(model))
   }
   // The update pair carries the warning colour, not the call-to-action green:
   // running an outdated engine is the problem being reported, and a button in
