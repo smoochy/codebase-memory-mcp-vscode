@@ -664,7 +664,7 @@ function copyRegisterButtons(model: PanelModel): string {
   }
   return (
     powershell +
-    button('betterCmm.copyInstallCommandBash', 'Copy for Git Bash', 'copy', 'primary')
+    button('betterCmm.copyInstallCommandBash', 'Copy register command (Git Bash)', 'copy', 'primary')
   )
 }
 
