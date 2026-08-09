@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.12]
 
 - An MCP entry naming another operating system's path is now reported as its own case rather than as a generic path conflict. Settings Sync copies `mcp.json` between machines and it holds one absolute path, so a second machine on a different platform inherits an entry it can never start; the panel now says which machine wrote it, offers to register here, and points at switching "MCP Servers" off under Settings Sync, which is the permanent fix.
 - New machine-scoped setting `betterCmm.autoReregisterMcpEntry`, off by default, re-registers that entry without asking. It does not stop the two machines rewriting the entry for each other, it makes the exchange silent and self-healing; each binary-and-entry pair is only re-registered once, so a synced path returning after a restart is left alone.
