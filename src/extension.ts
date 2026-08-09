@@ -289,6 +289,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'refreshIntervalSeconds',
     'autoReindex',
     'autoReindexIntervalSeconds',
+    'autoReregisterMcpEntry',
     'absoluteTimestamps',
     'dateLocale',
     'checkForUpdates',
@@ -426,16 +427,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * not remembered, so fixing whatever broke lets the next refresh try again.
    */
   const autoReregister = async (state: ExtensionState): Promise<boolean> => {
-    if (
-      state.foreignPlatformEntry === null ||
-      state.effectiveSource !== 'managed' ||
-      autoRegisterInFlight ||
-      !setting('autoReregisterMcpEntry', false)
-    ) {
+    if (state.foreignPlatformEntry === null) {
+      return false
+    }
+    // Every remaining guard leaves the warning on screen, so each one says why:
+    // silence here is indistinguishable from the feature being broken.
+    if (!setting('autoReregisterMcpEntry', false)) {
+      debug('automatic re-registration is off')
+      return false
+    }
+    if (state.effectiveSource !== 'managed') {
+      debug(`automatic re-registration skipped: binary is ${String(state.effectiveSource)}`)
+      return false
+    }
+    if (autoRegisterInFlight) {
       return false
     }
     const attempt = `${state.activePath ?? ''}<-${state.foreignPlatformEntry.entryPath}`
     if (context.globalState.get<string>(AUTO_REREGISTER_KEY) === attempt) {
+      debug(`automatic re-registration skipped: already done once for ${attempt}`)
       return false
     }
     autoRegisterInFlight = true

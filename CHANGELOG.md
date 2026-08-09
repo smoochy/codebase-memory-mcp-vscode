@@ -6,6 +6,8 @@
 - An installation with no `mcp.json` at all is now reported as unregistered rather than as registered. A file that is not there is an answer; only a file that exists and cannot be read leaves the state unknown.
 - The managed install on Windows now runs `System32\tar.exe` by name instead of whatever `tar` PATH resolves to. Git for Windows puts GNU tar ahead of it, and GNU tar reads `D:\...` as a remote host, so the download failed with "Cannot connect to D: resolve failed" on any machine whose storage sits off the system drive.
 - Registering now writes the MCP entry into the `mcp.json` of the VS Code instance the extension runs in. The CLI's own `install` finds VS Code by walking the default configuration directory, so a second installation started with `--user-data-dir` was reported as registered while its own config file stayed empty, and pressing "Register MCP server" again changed nothing visible. The CLI install still runs, since it also wires up the other agents it supports.
+- Changing `betterCmm.autoReregisterMcpEntry` is logged like every other setting. The log diffs a hand-maintained list of keys that the setting was never added to, so it was the one setting that changed in silence; a test now fails if the list and the manifest disagree.
+- Automatic re-registration says in the log why it did nothing. Each of its conditions - the setting being off, an external binary, an entry already re-registered once - left the warning on screen with no way to tell the case apart from a broken feature.
 - The setup screen carries the "View extension log" and "View engine logs" buttons too. A failing install names a log file, and setup was the one screen that offered no way to open it.
 
 ## [0.9.12]
