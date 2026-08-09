@@ -13,11 +13,25 @@
     "url": "https://github.com/smoochy/codebase-memory-mcp-vscode/issues"
   },
   "homepage": "https://github.com/smoochy/codebase-memory-mcp-vscode#readme",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1B2733",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "AI",
     "Other"
+  ],
+  "keywords": [
+    "mcp",
+    "model context protocol",
+    "codebase memory",
+    "knowledge graph",
+    "code indexing",
+    "codebase memory mcp"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -179,7 +193,8 @@
         {
           "id": "betterCmm.panel",
           "name": "Codebase Memory",
-          "type": "webview"
+          "type": "webview",
+          "icon": "media/icon.svg"
         }
       ]
     },

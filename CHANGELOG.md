@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The extension has a listing icon. `media/icon.png` is rasterized from `media/icon-marketplace.svg`, a coloured source kept separate from the `currentColor` activity-bar glyph in `media/icon.svg`, which renders as an invisible shape against a marketplace page.
+- `categories` reads `["AI", "Other"]` rather than the default `["Other"]`, and the manifest carries `keywords` and a `galleryBanner`, so the extension is reachable by search rather than only by name.
 - The repository carries its community files: issue forms for bug reports and feature requests, a chooser that routes CLI questions to the upstream project rather than here, and funding links. None of it ships inside the `.vsix`.
 - `package.json` names its `repository`, `bugs` and `homepage`, so both marketplaces link an installed extension back to its source and issue tracker.
 - The README's hand-maintained version badge is replaced by the Marketplace and Open VSX badges, which report the published version without a second edit at every bump, alongside a CI status badge.

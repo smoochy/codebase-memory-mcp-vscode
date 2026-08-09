@@ -16,6 +16,9 @@ tsconfig*.json
 **/*.ts
 # Developer tooling; nothing in dist/ requires it.
 scripts/**
+# Build input for media/icon.png. The manifest points the listing at the PNG,
+# so the vector source is only needed to regenerate it.
+media/icon-marketplace.svg
 # Repository metadata, meaningless inside an installed extension.
 .gitignore
 .github/**
