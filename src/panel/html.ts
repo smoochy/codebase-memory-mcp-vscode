@@ -883,13 +883,24 @@ export function renderBody(model: PanelModel, nonce: string): string {
   if (actions.showInstallButton) {
     buttons.push(button('betterCmm.installCli', 'Register MCP server', 'link', 'primary'))
   }
-  // The entry is present, so `showInstallButton` is off - but it points at
-  // another machine, which is the one case where rewriting a registration that
-  // exists is the fix. Reuses the register command rather than a new one.
-  if (state.foreignPlatformEntry !== null && !actions.showInstallButton) {
+  // The entry is present, so `showInstallButton` is off - but it names a binary
+  // this installation is not running, from another machine or from this one,
+  // and rewriting it is the fix in both cases. Nothing is written without the
+  // click: an entry pointing elsewhere can be deliberate. Reuses the register
+  // command rather than adding a second one.
+  if ((state.foreignPlatformEntry !== null || state.pathConflict !== null) && !actions.showInstallButton) {
     buttons.push(
       actions.mayWriteMcpConfig
-        ? button('betterCmm.installCli', 'Register on this machine', 'link', 'primary')
+        ? button(
+            'betterCmm.installCli',
+            // "on this machine" answers the other machine's path; it says
+            // nothing about an entry that names a second binary on this one.
+            state.foreignPlatformEntry !== null
+              ? 'Register on this machine'
+              : 'Register the active binary',
+            'link',
+            'primary',
+          )
         : button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'),
     )
   }

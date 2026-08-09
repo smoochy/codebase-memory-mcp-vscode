@@ -459,6 +459,21 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /Register on this machine/)
   })
 
+  // The warning about an entry naming another binary on this machine was a dead
+  // end: the only way out of it was editing mcp.json by hand.
+  it('offers to register the active binary when the entry names a different one', () => {
+    const conflict = computeState({
+      source: 'managed',
+      managedPath: MANAGED,
+      externalPath: null,
+      registration: { kind: 'present', path: 'C:/Windows/System32/where.exe' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state: conflict }), 'n1')
+    assert.match(html, /data-command="betterCmm\.installCli"[^>]*>[\s\S]*?Register the active binary/)
+    assert.doesNotMatch(html, /Register on this machine/)
+  })
+
   it('puts the nonce on every script tag', () => {
     const html = renderBody(model(), 'n1')
     for (const tag of html.match(/<script[^>]*>/g) ?? []) {
