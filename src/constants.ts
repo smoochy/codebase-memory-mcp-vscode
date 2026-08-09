@@ -48,14 +48,31 @@ export function uninstallCommandFor(
   binaryPath: string | null,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  return commandFor(binaryPath, 'uninstall', UNINSTALL_COMMAND, platform)
+}
+
+/** The register command bound to the same binary, for the same reason. */
+export function installCommandFor(
+  binaryPath: string | null,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return commandFor(binaryPath, 'install', INSTALL_COMMAND, platform)
+}
+
+function commandFor(
+  binaryPath: string | null,
+  subcommand: string,
+  bare: string,
+  platform: NodeJS.Platform,
+): string {
   if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
-    return UNINSTALL_COMMAND
+    return bare
   }
   // PowerShell is the default terminal on Windows, and there a quoted string in
   // command position is a parse error without the call operator. cmd.exe has
   // the opposite rule, so no single spelling suits both and the default shell
   // wins.
-  return platform === 'win32' ? `& "${binaryPath}" uninstall` : `"${binaryPath}" uninstall`
+  return platform === 'win32' ? `& "${binaryPath}" ${subcommand}` : `"${binaryPath}" ${subcommand}`
 }
 
 /**
@@ -70,4 +87,12 @@ export function uninstallCommandForBash(binaryPath: string | null): string {
     return UNINSTALL_COMMAND
   }
   return `"${binaryPath.replace(/\\/g, '/')}" uninstall`
+}
+
+/** The register command for a POSIX shell running on Windows. See above. */
+export function installCommandForBash(binaryPath: string | null): string {
+  if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
+    return INSTALL_COMMAND
+  }
+  return `"${binaryPath.replace(/\\/g, '/')}" install`
 }

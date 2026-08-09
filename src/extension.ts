@@ -7,7 +7,7 @@ import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binar
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
+import { installCommandFor, uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
 import { firstRegistration, mcpConfigCandidates, withMcpEntry, NO_CONFIG_FILE } from './mcp/registration'
@@ -795,7 +795,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.copyInstallCommand': async () => {
-      await vscode.env.clipboard.writeText(INSTALL_COMMAND)
+      // Bound to the resolved binary for the same reason as the uninstall one:
+      // the bare name needs the CLI on PATH, and the external install this
+      // button exists for is exactly the one the extension cannot assume is.
+      await vscode.env.clipboard.writeText(
+        installCommandFor(resolveState(storageDir, ownedInstallPath()).activePath),
+      )
       void vscode.window.showInformationMessage('Install command copied to the clipboard.')
     },
     'betterCmm.copyUninstallCommand': async () => {
