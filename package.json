@@ -30,7 +30,8 @@
     "model context protocol",
     "codebase memory",
     "knowledge graph",
-    "code indexing"
+    "code indexing",
+    "codebase memory mcp"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -192,7 +193,8 @@
         {
           "id": "betterCmm.panel",
           "name": "Codebase Memory",
-          "type": "webview"
+          "type": "webview",
+          "icon": "media/icon.svg"
         }
       ]
     },
