@@ -811,7 +811,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           '</ul>' +
           // Setup is the screen a failing install leaves the user on, and the
           // failure names a log the user has no way to find otherwise.
-          `<div class="actions grid">${logActions().join('')}</div>`,
+          `<div class="actions grid pair">${logActions().join('')}</div>`,
       ),
     )
     return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -1046,6 +1046,11 @@ header {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px;
 }
 .actions.grid .action { margin: 0; }
+/* The setup screen has two log buttons and nothing else to pair them with, so
+   they share a row at any panel width rather than falling into a column. */
+.actions.pair { grid-template-columns: 1fr 1fr; }
+.actions.pair .action { min-width: 0; }
+.actions.pair .action span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;
