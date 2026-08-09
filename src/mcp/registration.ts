@@ -61,6 +61,15 @@ function commandOf(value: unknown): string | null {
 }
 
 /**
+ * What a config file that is not there reads as.
+ *
+ * `null` means "could not be read", which is deliberately not an answer. A file
+ * that does not exist is an answer - nothing is registered - and conflating the
+ * two leaves a fresh installation claiming a registration it does not have.
+ */
+export const NO_CONFIG_FILE = '{}'
+
+/**
  * Interpret the MCP config text.
  *
  * Unreadable or unparsable input yields `unknown`, never `missing`: we must not

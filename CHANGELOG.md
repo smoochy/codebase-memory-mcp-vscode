@@ -3,6 +3,7 @@
 ## [0.9.13]
 
 - The panel now reads the MCP registration of the VS Code instance it is running in. It located `mcp.json` from the home directory before, which named the default installation's file whatever `--user-data-dir` the instance was started with, so a second installation was told about a registration that was not its own.
+- An installation with no `mcp.json` at all is now reported as unregistered rather than as registered. A file that is not there is an answer; only a file that exists and cannot be read leaves the state unknown.
 
 ## [0.9.12]
 

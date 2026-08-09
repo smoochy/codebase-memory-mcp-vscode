@@ -10,7 +10,7 @@ import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
-import { firstRegistration, mcpConfigCandidates } from './mcp/registration'
+import { firstRegistration, mcpConfigCandidates, NO_CONFIG_FILE } from './mcp/registration'
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
@@ -133,7 +133,9 @@ function resolveState(storageDir: string, ownedInstallPath: string | null): Exte
     managedPath: managed !== '' && existsSync(managed) ? managed : null,
     externalPath: external,
     registration: firstRegistration(
-      mcpConfigCandidates(storageDir).map(readTextOrNull),
+      mcpConfigCandidates(storageDir).map((path) =>
+        existsSync(path) ? readTextOrNull(path) : NO_CONFIG_FILE,
+      ),
     ),
     platform: process.platform,
   })

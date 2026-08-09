@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict'
 import {
   firstRegistration,
   mcpConfigCandidates,
+  NO_CONFIG_FILE,
   readRegistration,
   stripJsonComments,
 } from '../../src/mcp/registration'
@@ -112,6 +113,12 @@ describe('firstRegistration', () => {
 
   it('reports missing when a readable file exists but has no entry', () => {
     assert.deepEqual(firstRegistration([null, '{}']), { kind: 'missing' })
+  })
+
+  // A fresh installation has no mcp.json at all, and reading that as unknown
+  // left the panel reporting a registration it did not have.
+  it('reports missing when the file is not there', () => {
+    assert.deepEqual(firstRegistration([NO_CONFIG_FILE]), { kind: 'missing' })
   })
 
   it('reports unknown when no file could be read at all', () => {
