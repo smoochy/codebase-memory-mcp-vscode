@@ -1040,7 +1040,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (confirmed !== 'Remove') {
         return
       }
-      await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const result = await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      if (result.ok) {
+        log(`User: removed "${project.name}" (${project.root_path}) from the index`)
+      } else {
+        warn(`User: removing "${project.name}" (${project.root_path}) failed: ${result.error}`)
+      }
       await refresh()
     },
     'betterCmm.refresh': refresh,
