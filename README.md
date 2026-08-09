@@ -66,6 +66,12 @@ npm run test           # unit + integration, in a real extension host
 npm run package        # vsce package --no-dependencies
 ```
 
+The marketplace listing icon is committed as `media/icon.png` rather than built, since it is a published asset. Regenerate it after editing its source, `media/icon-marketplace.svg`:
+
+```bash
+uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').write(bytes(resvg_py.svg_to_bytes(svg_path='media/icon-marketplace.svg', width=256, height=256)))"
+```
+
 `docs/MANUAL-TESTING.md` holds the manual checklist for the paths a headless suite cannot reach. `CHANGELOG.md` records every released version.
 
 ## Licence

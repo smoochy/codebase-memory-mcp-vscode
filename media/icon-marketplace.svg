@@ -2,9 +2,8 @@
   Listing icon source. Distinct from icon.svg on purpose: that one is the
   activity-bar glyph and uses currentColor so VS Code recolours it per theme,
   which renders as an invisible shape on a marketplace page. This one carries
-  fixed colours and its own background, and is rasterized to icon.png with:
-
-    uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').write(bytes(resvg_py.svg_to_bytes(svg_path='media/icon-marketplace.svg', width=256, height=256)))"
+  fixed colours and its own background, and is rasterized to icon.png by the
+  command recorded under "Development" in README.md.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <rect width="128" height="128" rx="24" fill="#1B2733"/>
