@@ -1041,10 +1041,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return
       }
       const result = await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const label = folderName(project.root_path)
       if (result.ok) {
-        log(`User: removed "${project.name}" (${project.root_path}) from the index`)
+        // What was dropped is the only measure of the removal, and it is gone
+        // from the next refresh onwards, so it is read from the last state.
+        const freed = [
+          typeof project.nodes === 'number' ? `${project.nodes.toLocaleString('en-US')} nodes` : null,
+          typeof project.edges === 'number' ? `${project.edges.toLocaleString('en-US')} edges` : null,
+        ].filter((part): part is string => part !== null)
+        const dropped = freed.length === 0 ? '' : `: ${freed.join(', ')} dropped`
+        log(`User: removed "${label}" (${project.root_path}) from the index${dropped}`)
       } else {
-        warn(`User: removing "${project.name}" (${project.root_path}) failed: ${result.error}`)
+        warn(`User: removing "${label}" (${project.root_path}) failed: ${result.error}`)
       }
       await refresh()
     },
