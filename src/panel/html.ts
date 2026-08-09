@@ -21,6 +21,11 @@ export interface PanelModel {
    */
   updateProgress?: number | null
   /**
+   * How far the initial setup install has come, 0 to 100, or null when none is
+   * running. Same reason as `updateProgress` for living in the model.
+   */
+  setupProgress?: number | null
+  /**
    * True between activation and the first completed CLI call. The binary takes
    * seconds to start, so the panel renders a skeleton in the meantime rather
    * than staying blank and reading as a hang.
@@ -148,6 +153,26 @@ function updateButton(version: string, percent: number | null): string {
     'data-command="betterCmm.updateBinary">' +
     `<span class="fill" style="width:${String(shown)}%"></span>` +
     `<span class="label">${icon('arrowUp')}<span>${escapeHtml(`Update to ${version}`)}</span></span>` +
+    `<span class="pct">${escapeHtml(progressLabel(shown))}</span>` +
+    '</button>'
+  )
+}
+
+/**
+ * The Setup button, which doubles as the progress bar for the install it starts.
+ *
+ * Same two-faced markup as {@link updateButton}: the download it runs is the
+ * same one, so it reports the same way rather than leaving the user with a
+ * pressed button and only a notification to watch.
+ */
+function setupButton(percent: number | null): string {
+  const running = percent !== null
+  const shown = Math.max(0, Math.min(100, Math.round(percent ?? 0)))
+  return (
+    `<button class="action primary setup${running ? ' progress' : ''}" ` +
+    'data-command="betterCmm.runSetup">' +
+    `<span class="fill" style="width:${String(shown)}%"></span>` +
+    `<span class="label">${icon('download')}<span>Setup</span></span>` +
     `<span class="pct">${escapeHtml(progressLabel(shown))}</span>` +
     '</button>'
   )
@@ -535,6 +560,11 @@ document.addEventListener('click', (event) => {
     if (button.classList.contains('progress')) return
     setUpdateProgress(0)
   }
+  if (command === 'betterCmm.runSetup') {
+    // Same as the update button: the install it starts is not restartable.
+    if (button.classList.contains('progress')) return
+    setSetupProgress(0)
+  }
   vscode.postMessage({ command, project: button.dataset.project })
 })
 // The percentage arrives from the extension while the download runs. Painting
@@ -554,9 +584,26 @@ function setUpdateProgress(percent) {
   button.querySelector('.pct').textContent =
     shown >= ${String(INSTALLING_AT)} ? 'Installing...' : shown + '%'
 }
+function setSetupProgress(percent) {
+  const button = document.querySelector('.action.setup')
+  if (button === null) return
+  if (percent === null) {
+    button.classList.remove('progress')
+    return
+  }
+  const shown = Math.max(0, Math.min(100, Math.round(percent)))
+  button.classList.add('progress')
+  button.querySelector('.fill').style.width = shown + '%'
+  button.querySelector('.pct').textContent =
+    shown >= ${String(INSTALLING_AT)} ? 'Installing...' : shown + '%'
+}
 window.addEventListener('message', (event) => {
   const message = event.data
   if (message === null || typeof message !== 'object') return
+  if (message.kind === 'setupProgress') {
+    setSetupProgress(message.percent)
+    return
+  }
   if (message.kind !== 'updateProgress') return
   setUpdateProgress(message.percent)
 })
@@ -743,7 +790,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
     parts.push(
       section(
         'Actions',
-        `<div class="actions">${button('betterCmm.runSetup', 'Setup', 'download', 'primary')}</div>` +
+        `<div class="actions">${setupButton(model.setupProgress ?? null)}</div>` +
           '<ul class="steps">' +
           '<li>Installs the binary from ' +
           `<a href="${escapeHtml(upstreamRepoUrl())}">the upstream project</a></li>` +
@@ -1055,6 +1102,18 @@ section h2 {
 .action.update.progress { cursor: default; justify-content: center; }
 .action.update.progress .label { display: none; }
 .action.update.progress .pct { display: block; }
+/* The Setup button works the same way, in the call-to-action colour. */
+.action.setup { position: relative; overflow: hidden; }
+.action.setup .label { display: flex; align-items: center; gap: 10px; }
+.action.setup .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+  background: rgba(var(--ok-rgb), .30); transition: width .2s ease;
+}
+.action.setup .label, .action.setup .pct { position: relative; }
+.action.setup .pct { display: none; font-variant-numeric: tabular-nums; }
+.action.setup.progress { cursor: default; justify-content: center; }
+.action.setup.progress .label { display: none; }
+.action.setup.progress .pct { display: block; }
 .action.danger {
   font-weight: 600; color: var(--err);
   background: rgba(var(--err-rgb), .10);

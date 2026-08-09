@@ -165,6 +165,31 @@ describe('renderBody', () => {
     })
     const html = renderBody(model({ state }), 'n1')
     assert.match(html, /data-command="betterCmm.runSetup"/)
+    assert.doesNotMatch(html, /class="action primary setup progress"/)
+  })
+
+  it('renders a running setup install as a filled bar with its percentage', () => {
+    const state = computeState({
+      source: 'auto',
+      managedPath: null,
+      externalPath: null,
+      registration: { kind: 'unknown' },
+    })
+    const html = renderBody(model({ state, setupProgress: 42.4 }), 'n1')
+    assert.match(html, /class="action primary setup progress"/)
+    assert.match(html, /<span class="fill" style="width:42%">/)
+    assert.match(html, /<span class="pct">42%<\/span>/)
+  })
+
+  it('names the step once the setup download is done', () => {
+    const state = computeState({
+      source: 'auto',
+      managedPath: null,
+      externalPath: null,
+      registration: { kind: 'unknown' },
+    })
+    const html = renderBody(model({ state, setupProgress: 90 }), 'n1')
+    assert.match(html, /<span class="pct">Installing\.\.\.<\/span>/)
   })
 
   it('offers install only when the managed binary is unregistered', () => {

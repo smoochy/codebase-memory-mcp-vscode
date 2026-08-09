@@ -18,6 +18,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private view_: 'main' | 'settings' = 'main'
   private cliSettings: CliSetting[] = []
   private updateProgress: number | null = null
+  private setupProgress: number | null = null
   /** Whether the current view object has been given a badge. See `setBadge`. */
   private viewBadgeWritten = false
   /**
@@ -81,6 +82,18 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage({ kind: 'updateProgress', percent })
   }
 
+  /** The same, for the install the Setup button starts. */
+  setSetupProgress(percent: number | null): void {
+    if (percent === this.setupProgress) {
+      return
+    }
+    this.setupProgress = percent
+    if (this.model !== undefined) {
+      this.model = { ...this.model, setupProgress: percent }
+    }
+    void this.view?.webview.postMessage({ kind: 'setupProgress', percent })
+  }
+
   update(model: PanelModel): void {
     // The view is panel state, not CLI state, so a refresh landing while the
     // uninstall screen is open must not throw the user back to the main view.
@@ -89,6 +102,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       view: this.view_,
       cliSettings: this.cliSettings,
       updateProgress: this.updateProgress,
+      setupProgress: this.setupProgress,
     }
     this.render()
   }
