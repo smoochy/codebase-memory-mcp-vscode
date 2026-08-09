@@ -1,0 +1,16 @@
+<!--
+  Listing icon source. Distinct from icon.svg on purpose: that one is the
+  activity-bar glyph and uses currentColor so VS Code recolours it per theme,
+  which renders as an invisible shape on a marketplace page. This one carries
+  fixed colours and its own background, and is rasterized to icon.png with:
+
+    uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').write(bytes(resvg_py.svg_to_bytes(svg_path='media/icon-marketplace.svg', width=256, height=256)))"
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="24" fill="#1B2733"/>
+  <g transform="translate(64 64) scale(3.9) translate(-12 -12)">
+    <path d="M12 3.8 19.2 7.9V16.1L12 20.2 4.8 16.1V7.9Z" fill="none" stroke="#4FC3F7" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M12 3.8v5.6M19.2 7.9l-4.8 2.9M4.8 16.1l4.8-2.9M12 20.2v-5.6" fill="none" stroke="#4FC3F7" stroke-width="1.3"/>
+    <circle cx="12" cy="12" r="2.5" fill="#FFB74D"/>
+  </g>
+</svg>

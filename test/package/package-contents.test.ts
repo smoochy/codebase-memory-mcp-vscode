@@ -44,6 +44,13 @@ describe('packaged contents', () => {
     assert.deepEqual(unexpected, [], 'unexpected files in the package')
   })
 
+  // A marketplace version is irreversible, so a listing published without its
+  // icon cannot be corrected under the same version.
+  it('ships the listing icon and not its vector source', () => {
+    assert.ok(files.includes('media/icon.png'))
+    assert.ok(!files.includes('media/icon-marketplace.svg'))
+  })
+
   it('ships no binary, since the extension downloads it at runtime', () => {
     assert.ok(!files.some((f) => /codebase-memory-mcp(\.exe)?$/.test(f)))
   })
