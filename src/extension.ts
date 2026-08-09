@@ -358,7 +358,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   )
 
-  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
+  // `fetch` answers an unreachable host with the bare "fetch failed", which is
+  // the whole message the panel then shows. Naming the host here is what tells
+  // an offline machine apart from a broken install, and it covers every request
+  // the extension makes, since they all go through this one function.
+  const fetchImpl = async (url: string, init: { redirect: 'manual' }): Promise<Response> => {
+    try {
+      return await fetch(url, init)
+    } catch (cause) {
+      throw new Error(`could not reach ${new URL(url).host}: ${String(cause)}`, { cause })
+    }
+  }
 
   /**
    * Latest tag seen on GitHub, cached for the whole session.
