@@ -128,6 +128,48 @@ export function mcpConfigCandidates(storageDir: string): string[] {
 }
 
 /**
+ * The config text with this instance's MCP entry in it.
+ *
+ * The CLI's own `install` finds VS Code by walking the default config
+ * directory, so an instance started with `--user-data-dir` is never among the
+ * files it writes. The extension knows exactly which file is its own, so it
+ * writes that one itself rather than asking the CLI to guess.
+ *
+ * Everything else in the file is kept, and an entry already carrying one of the
+ * accepted names is updated in place rather than joined by a second one under a
+ * different name. Comments do not survive the round trip: VS Code writes this
+ * file itself and re-reading it through a JSONC editor would cost a dependency
+ * this extension does not have.
+ */
+export function withMcpEntry(text: string | null, command: string): string {
+  let parsed: unknown = null
+  if (text !== null && text.trim().length > 0) {
+    try {
+      parsed = JSON.parse(stripJsonComments(text))
+    } catch {
+      // Unparsable, so there is nothing to preserve. Refusing here would leave
+      // the user with a button that cannot ever work.
+      parsed = null
+    }
+  }
+
+  const root: Record<string, unknown> =
+    typeof parsed === 'object' && parsed !== null ? { ...(parsed as Record<string, unknown>) } : {}
+
+  const existing = root['servers']
+  const servers: Record<string, unknown> =
+    typeof existing === 'object' && existing !== null
+      ? { ...(existing as Record<string, unknown>) }
+      : {}
+
+  const key = MCP_SERVER_KEYS.find((name) => name in servers) ?? MCP_SERVER_KEYS[0]
+  servers[key as string] = { type: 'stdio', command }
+  root['servers'] = servers
+
+  return `${JSON.stringify(root, null, 4)}\n`
+}
+
+/**
  * Interpret the candidate files in order.
  *
  * A present entry wins. Otherwise `missing` is only reported if at least one

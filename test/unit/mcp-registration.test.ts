@@ -5,6 +5,7 @@ import {
   NO_CONFIG_FILE,
   readRegistration,
   stripJsonComments,
+  withMcpEntry,
 } from '../../src/mcp/registration'
 
 describe('stripJsonComments', () => {
@@ -60,6 +61,42 @@ describe('readRegistration', () => {
   it('reports missing when the entry has no usable command', () => {
     assert.deepEqual(readRegistration('{"servers":{"codebase-memory-mcp":{"args":[]}}}'), {
       kind: 'missing',
+    })
+  })
+})
+
+describe('withMcpEntry', () => {
+  const parse = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>
+
+  it('writes an entry VS Code reads, into a file that does not exist yet', () => {
+    const written = withMcpEntry(null, 'C:/bin/cmm.exe')
+    assert.deepEqual(parse(written).servers['codebase-memory-mcp'], {
+      type: 'stdio',
+      command: 'C:/bin/cmm.exe',
+    })
+    assert.deepEqual(readRegistration(written), { kind: 'present', path: 'C:/bin/cmm.exe' })
+  })
+
+  it('keeps the other servers and the rest of the file', () => {
+    const before = '{ "inputs": [1], "servers": { "other": { "command": "x" } } }'
+    const after = parse(withMcpEntry(before, '/bin/cmm'))
+    assert.deepEqual(after['inputs'], [1])
+    assert.deepEqual(after['servers']['other'], { command: 'x' })
+  })
+
+  // Otherwise a machine that registered under the older name gains a second
+  // entry under the newer one, and both start the same server.
+  it('updates the entry already there rather than adding one beside it', () => {
+    const before = '{"servers": {"codebase-memory": {"type": "stdio", "command": "/old/cmm"}}}'
+    const after = parse(withMcpEntry(before, '/new/cmm'))
+    assert.deepEqual(Object.keys(after['servers']), ['codebase-memory'])
+    assert.equal(after['servers']['codebase-memory'].command, '/new/cmm')
+  })
+
+  it('replaces a file it cannot parse rather than refusing to register', () => {
+    assert.deepEqual(readRegistration(withMcpEntry('{ not json', '/bin/cmm')), {
+      kind: 'present',
+      path: '/bin/cmm',
     })
   })
 })

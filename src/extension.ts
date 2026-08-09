@@ -10,13 +10,13 @@ import { COMMAND_IDS } from './commands'
 import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
-import { firstRegistration, mcpConfigCandidates, NO_CONFIG_FILE } from './mcp/registration'
+import { firstRegistration, mcpConfigCandidates, withMcpEntry, NO_CONFIG_FILE } from './mcp/registration'
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { advanceIndexRecord, type IndexRecord } from './state/indexRecord'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
@@ -584,7 +584,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   /**
-   * Run the CLI's own `install`, which is what writes the MCP entry.
+   * Run the CLI's own `install`, then write this instance's own MCP entry.
+   *
+   * The CLI finds VS Code by walking the default configuration directory, so it
+   * registers the default installation and never the one started with a
+   * `--user-data-dir` of its own. Its install still runs, because it also wires
+   * up the other agents it supports, but the file this window actually reads is
+   * written here.
    *
    * The state is resolved fresh rather than passed in: this runs straight
    * after a download, so any state captured before it is already stale and
@@ -606,6 +612,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const detail = output.stderr.trim() || output.stdout.trim() || 'no output'
         return { ok: false, error: `install exited with ${String(output.code)}: ${detail}` }
       }
+      const target = mcpConfigCandidates(storageDir)[0]
+      if (target === undefined) {
+        return { ok: false, error: `cannot locate mcp.json for ${storageDir}` }
+      }
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, withMcpEntry(readTextOrNull(target), state.activePath), 'utf8')
+      log(`registered ${state.activePath} in ${target}`)
       return { ok: true }
     } catch (cause) {
       return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
@@ -751,6 +764,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.installCli': async () => {
+      log('User: register MCP server')
       const result = await registerMcp()
       if (result.ok) {
         restartRequired = true
