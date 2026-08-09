@@ -1269,6 +1269,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.window.registerWebviewViewProvider(PanelProvider.viewType, panel),
   )
 
+  // A webview view only exists once the user has opened it, and `badge` lives
+  // on that object, so the activity bar could not report an update until the
+  // panel had been clicked at least once - the one moment the badge is not
+  // needed. A tree view exists from creation, so this empty one carries the
+  // badge instead. It stays hidden behind its `when` clause, which is also
+  // what keeps the sidebar to a single visible view.
+  const badgeView = vscode.window.createTreeView(PanelProvider.updateViewType, {
+    treeDataProvider: { getChildren: () => [], getTreeItem: (item: never) => item },
+  })
+  context.subscriptions.push(badgeView)
+  panel.onBadgeChange((badge) => {
+    badgeView.badge = badge
+    void vscode.commands.executeCommand(
+      'setContext',
+      'betterCmm.updateAvailable',
+      badge !== undefined,
+    )
+  })
+
   /**
    * Reindex what the checkout has moved past, if the user asked for it.
    *

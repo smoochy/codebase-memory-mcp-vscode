@@ -11,6 +11,8 @@ function makeNonce(): string {
 
 export class PanelProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'betterCmm.panel'
+  /** The empty view that carries the activity-bar badge. See `onBadgeChange`. */
+  static readonly updateViewType = 'betterCmm.updates'
 
   private view: vscode.WebviewView | undefined
   private model: PanelModel | undefined
@@ -19,16 +21,8 @@ export class PanelProvider implements vscode.WebviewViewProvider {
   private cliSettings: CliSetting[] = []
   private updateProgress: number | null = null
   private setupProgress: number | null = null
-  /** Whether the current view object has been given a badge. See `setBadge`. */
-  private viewBadgeWritten = false
-  /**
-   * Whether the activity bar is showing a badge right now.
-   *
-   * Deliberately not reset when a view is resolved: the icon keeps its count
-   * across a hidden view, which is the whole reason `setBadge` needs a
-   * workaround at all.
-   */
-  private badgeShown = false
+  private badgeListener: ((badge: vscode.ViewBadge | undefined) => void) | undefined
+  private badgeReported: vscode.ViewBadge | undefined
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -44,8 +38,6 @@ export class PanelProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view
-    // A fresh object carries no badge, whatever the activity bar still shows.
-    this.viewBadgeWritten = false
     view.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] }
     view.webview.onDidReceiveMessage(
       (message: { command?: unknown; project?: unknown; value?: unknown }) => {
@@ -105,6 +97,19 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       setupProgress: this.setupProgress,
     }
     this.render()
+    // Reported rather than written here: the badge belongs to a view that
+    // exists before the panel has ever been opened, which this one does not.
+    const badge = this.badgeFor(model)
+    if (badge?.tooltip !== this.badgeReported?.tooltip) {
+      this.badgeReported = badge
+      this.badgeListener?.(badge)
+    }
+  }
+
+  /** Called whenever the activity bar count changes. See `badgeFor`. */
+  onBadgeChange(listener: (badge: vscode.ViewBadge | undefined) => void): void {
+    this.badgeListener = listener
+    listener(this.badgeReported)
   }
 
   /**
@@ -193,33 +198,6 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       `<style nonce="${nonce}">${PANEL_CSS}</style>` +
       `</head><body>${renderBody(model, nonce)}</body></html>`
     this.view.webview.html = this.lastHtml
-    this.setBadge(this.view, this.badgeFor(model))
-  }
-
-  /**
-   * Write the badge, working around VS Code dropping the clear.
-   *
-   * VS Code caches the last badge on the WebviewView object and skips the
-   * update when the value has not changed. Hiding the view discards that
-   * object; the one resolved afterwards starts with an empty cache while the
-   * activity bar still shows the old count, so clearing it compares undefined
-   * against undefined and is thrown away. The badge then survives until the
-   * window is reloaded. Setting one first gives that cache something to differ
-   * from, and is only needed once per view.
-   *
-   * That priming write is only correct when there is a stale count to clear.
-   * On a first activation there is none, and writing one made the icon claim
-   * an update on a fresh install - the write landed and the clear behind it
-   * was dropped as the no-op it now was. Hence `badgeShown`, which outlives
-   * the view object the way the icon does.
-   */
-  private setBadge(view: vscode.WebviewView, badge: vscode.ViewBadge | undefined): void {
-    if (badge === undefined && !this.viewBadgeWritten && this.badgeShown) {
-      view.badge = { value: 1, tooltip: '' }
-    }
-    this.viewBadgeWritten = true
-    view.badge = badge
-    this.badgeShown = badge !== undefined
   }
 
   /**
