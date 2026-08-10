@@ -7,16 +7,21 @@ import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binar
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
+import {
+  installCommandFor,
+  installCommandForBash,
+  uninstallCommandFor,
+  uninstallCommandForBash,
+} from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
-import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
+import { firstRegistration, mcpConfigCandidates, withMcpEntry, NO_CONFIG_FILE } from './mcp/registration'
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { advanceIndexRecord, type IndexRecord } from './state/indexRecord'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { resolveLatestTag } from './binary/fetch'
@@ -133,14 +138,9 @@ function resolveState(storageDir: string, ownedInstallPath: string | null): Exte
     managedPath: managed !== '' && existsSync(managed) ? managed : null,
     externalPath: external,
     registration: firstRegistration(
-      mcpConfigCandidates({
-        platform: process.platform,
-        home: homedir(),
-        appData: process.env['APPDATA'],
-        // The active profile directory sits two levels above globalStorage
-        // when VS Code runs on a named profile.
-        profileDir: activeProfileDir(storageDir),
-      }).map(readTextOrNull),
+      mcpConfigCandidates(storageDir).map((path) =>
+        existsSync(path) ? readTextOrNull(path) : NO_CONFIG_FILE,
+      ),
     ),
     platform: process.platform,
   })
@@ -176,7 +176,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * leaves the server unreachable until a reload. Without saying so, a
    * successful setup looks broken.
    */
-  let restartRequired = false
+  let restartRequired: false | 'registration' | 'binary' = false
 
   /** Path this extension recorded installing, or null when it installed nothing. */
   const ownedInstallPath = (): string | null =>
@@ -294,6 +294,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     'refreshIntervalSeconds',
     'autoReindex',
     'autoReindexIntervalSeconds',
+    'autoReregisterMcpEntry',
     'absoluteTimestamps',
     'dateLocale',
     'checkForUpdates',
@@ -362,7 +363,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   )
 
-  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
+  // `fetch` answers an unreachable host with the bare "fetch failed", which is
+  // the whole message the panel then shows. Naming the host here is what tells
+  // an offline machine apart from a broken install, and it covers every request
+  // the extension makes, since they all go through this one function.
+  const fetchImpl = async (url: string, init: { redirect: 'manual' }): Promise<Response> => {
+    try {
+      return await fetch(url, init)
+    } catch (cause) {
+      throw new Error(`could not reach ${new URL(url).host}: ${String(cause)}`, { cause })
+    }
+  }
 
   /**
    * Latest tag seen on GitHub, cached for the whole session.
@@ -431,16 +442,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * not remembered, so fixing whatever broke lets the next refresh try again.
    */
   const autoReregister = async (state: ExtensionState): Promise<boolean> => {
-    if (
-      state.foreignPlatformEntry === null ||
-      state.effectiveSource !== 'managed' ||
-      autoRegisterInFlight ||
-      !setting('autoReregisterMcpEntry', false)
-    ) {
+    if (state.foreignPlatformEntry === null) {
+      return false
+    }
+    // Every remaining guard leaves the warning on screen, so each one says why:
+    // silence here is indistinguishable from the feature being broken.
+    if (!setting('autoReregisterMcpEntry', false)) {
+      debug('automatic re-registration is off')
+      return false
+    }
+    if (state.effectiveSource !== 'managed') {
+      debug(`automatic re-registration skipped: binary is ${String(state.effectiveSource)}`)
+      return false
+    }
+    if (autoRegisterInFlight) {
       return false
     }
     const attempt = `${state.activePath ?? ''}<-${state.foreignPlatformEntry.entryPath}`
     if (context.globalState.get<string>(AUTO_REREGISTER_KEY) === attempt) {
+      debug(`automatic re-registration skipped: already done once for ${attempt}`)
       return false
     }
     autoRegisterInFlight = true
@@ -451,7 +471,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         return false
       }
       await context.globalState.update(AUTO_REREGISTER_KEY, attempt)
-      restartRequired = true
+      restartRequired = 'registration'
       log(
         `the MCP entry named ${state.foreignPlatformEntry.entryPath}, from another machine, ` +
           'and was re-registered here automatically.',
@@ -589,7 +609,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   /**
-   * Run the CLI's own `install`, which is what writes the MCP entry.
+   * Run the CLI's own `install`, then write this instance's own MCP entry.
+   *
+   * The CLI finds VS Code by walking the default configuration directory, so it
+   * registers the default installation and never the one started with a
+   * `--user-data-dir` of its own. Its install still runs, because it also wires
+   * up the other agents it supports, but the file this window actually reads is
+   * written here.
    *
    * The state is resolved fresh rather than passed in: this runs straight
    * after a download, so any state captured before it is already stale and
@@ -611,6 +637,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const detail = output.stderr.trim() || output.stdout.trim() || 'no output'
         return { ok: false, error: `install exited with ${String(output.code)}: ${detail}` }
       }
+      const target = mcpConfigCandidates(storageDir)[0]
+      if (target === undefined) {
+        return { ok: false, error: `cannot locate mcp.json for ${storageDir}` }
+      }
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, withMcpEntry(readTextOrNull(target), state.activePath), 'utf8')
+      log(`registered ${state.activePath} in ${target}`)
       return { ok: true }
     } catch (cause) {
       return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
@@ -662,6 +695,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     arch: process.arch,
     storageDir,
     installPath: managedBinaryPath(homedir(), process.platform),
+    systemRoot: process.env['SystemRoot'],
     // The steps of an install - the URL fetched, the path written - are detail.
     // What the user did and what came of it is logged at info by the caller.
     log: debug,
@@ -724,7 +758,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // command was the flow contradicting its own description.
         const registered = await registerMcp()
         if (registered.ok) {
-          restartRequired = true
+          restartRequired = 'registration'
         }
         await refresh()
         // The setup screen is gone with the install; drop the percentage so a
@@ -755,9 +789,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.installCli': async () => {
+      log('User: register MCP server')
       const result = await registerMcp()
       if (result.ok) {
-        restartRequired = true
+        restartRequired = 'registration'
       }
       await refresh()
       if (!result.ok) {
@@ -765,8 +800,19 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.copyInstallCommand': async () => {
-      await vscode.env.clipboard.writeText(INSTALL_COMMAND)
+      // Bound to the resolved binary for the same reason as the uninstall one:
+      // the bare name needs the CLI on PATH, and the external install this
+      // button exists for is exactly the one the extension cannot assume is.
+      await vscode.env.clipboard.writeText(
+        installCommandFor(resolveState(storageDir, ownedInstallPath()).activePath),
+      )
       void vscode.window.showInformationMessage('Install command copied to the clipboard.')
+    },
+    'betterCmm.copyInstallCommandBash': async () => {
+      await vscode.env.clipboard.writeText(
+        installCommandForBash(resolveState(storageDir, ownedInstallPath()).activePath),
+      )
+      void vscode.window.showInformationMessage('Register command copied for Git Bash.')
     },
     'betterCmm.copyUninstallCommand': async () => {
       // Bound to the resolved binary: the bare name only works when the CLI is
@@ -927,6 +973,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           throw cause
         }
         log(`update installed ${latestTag} (was ${installed.value})`)
+        // The running server is still the process started from the old binary,
+        // and the toast saying so is collapsed by default. The panel is where
+        // the user just clicked, so it says it too, until the reload.
+        restartRequired = 'binary'
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
         latestTagCache = latestTag
@@ -1020,7 +1070,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (confirmed !== 'Remove') {
         return
       }
-      await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const result = await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const label = folderName(project.root_path)
+      if (result.ok) {
+        // What was dropped is the only measure of the removal, and it is gone
+        // from the next refresh onwards, so it is read from the last state.
+        const freed = [
+          typeof project.nodes === 'number' ? `${project.nodes.toLocaleString('en-US')} nodes` : null,
+          typeof project.edges === 'number' ? `${project.edges.toLocaleString('en-US')} edges` : null,
+        ].filter((part): part is string => part !== null)
+        const dropped = freed.length === 0 ? '' : `: ${freed.join(', ')} dropped`
+        log(`User: removed "${label}" (${project.root_path}) from the index${dropped}`)
+      } else {
+        warn(`User: removing "${label}" (${project.root_path}) failed: ${result.error}`)
+      }
       await refresh()
     },
     'betterCmm.refresh': refresh,
@@ -1235,6 +1298,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(PanelProvider.viewType, panel),
   )
+
+  // A webview view only exists once the user has opened it, and `badge` lives
+  // on that object, so the activity bar could not report an update until the
+  // panel had been clicked at least once - the one moment the badge is not
+  // needed. A tree view exists from creation, so this empty one carries the
+  // badge instead. It stays hidden behind its `when` clause, which is also
+  // what keeps the sidebar to a single visible view.
+  const badgeView = vscode.window.createTreeView(PanelProvider.updateViewType, {
+    treeDataProvider: { getChildren: () => [], getTreeItem: (item: never) => item },
+  })
+  context.subscriptions.push(badgeView)
+  panel.onBadgeChange((badge) => {
+    badgeView.badge = badge
+    void vscode.commands.executeCommand(
+      'setContext',
+      'betterCmm.updateAvailable',
+      badge !== undefined,
+    )
+  })
 
   /**
    * Reindex what the checkout has moved past, if the user asked for it.

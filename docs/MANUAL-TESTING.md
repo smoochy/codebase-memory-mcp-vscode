@@ -2,7 +2,20 @@
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-231 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+418 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+
+## Sign-off
+
+Every row below was run against `better-codebase-memory-mcp-0.9.13.vsix` in a scratch profile and passed, on Windows 11 on 2026-08-09 and 2026-08-10 and on macOS on 2026-08-10. Row 13 was run on both platforms; the Linux clipboard variant is still open, and Linux is not a release target for this iteration.
+
+Six rows failed on the first attempt and were fixed on the branch before they passed: #3 reported the bare `fetch failed` with no indication that it was a network problem, #9 warned about an entry naming another binary without offering any way out of it, #11 reported a locked target as a half-finished install, #13 put the bare `codebase-memory-mcp install` in the clipboard instead of the resolved binary, and the same command was unusable in Git Bash, which reads its leading call operator as a background job. Each fix carries a unit test.
+
+Two observations that are behaviour rather than defects, recorded so the next run does not chase them:
+
+- **#15**: node and edge counts do not climb during indexing. Adding a repository is a single CLI call that returns its counts on completion, so the panel has nothing partial to show and the figures jump at the end. 17,748 files indexed in 72 seconds.
+- **#16**: polling pauses when the panel is not visible, so the debug log stops too. Both stop for the same reason.
+
+The extension log twice recorded `listing projects failed: CLI exited with 1` in the seconds after registering the MCP server, healing itself on the next refresh. Tracked separately as a warning with a misleading message, not a release blocker.
 
 **Status legend**
 
@@ -19,9 +32,9 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | # | Area | What to do | Expected | Priority |
 |---|---|---|---|---|
 | 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking |
-| 2 | Download | Run setup, choose `managed` | Binary lands in global storage, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
+| 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking |
-| 8 | MCP entry | After `install`, restart VS Code, check the MCP server list | `codebase-memory-mcp` present and starts | Blocking |
+| 8 | MCP entry | After `install`, restart VS Code, check the MCP server list | `codebase-memory-mcp` present and starts, and the entry is in this installation's own `mcp.json` - the one beside its `globalStorage`, not the default profile's | Blocking |
 | 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking |
 | 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking |
 
@@ -70,11 +83,7 @@ Deferred during implementation; each is recorded in the SDD ledger.
 
 ---
 
-## Not yet run by me
-
-### Running the integration suite (`npm run test:integration`)
-
-**6 passing, 0 failing** as of the last run, alongside 231 unit tests.
+## Running the integration suite (`npm run test:integration`)
 
 ⚠️ **It will not run from a terminal inside VS Code without one change.** VS Code exports `ELECTRON_RUN_AS_NODE=1` to its integrated terminals. That variable makes the downloaded `Code.exe` run as plain Node, so it reports `v24.18.0` and rejects every VS Code flag with `bad option: --disable-extensions` and so on. Clear it first:
 

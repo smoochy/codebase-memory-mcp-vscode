@@ -19,7 +19,7 @@ Only the latest version published to the Visual Studio Marketplace and Open VSX 
 
 ## Scope
 
-This extension does not implement indexing or the knowledge graph. It downloads the `codebase-memory-mcp` CLI, verifies it against the SHA-256 checksums published with the upstream release, and registers an MCP server by invoking that CLI's own installer. The boundary follows from that.
+This extension does not implement indexing or the knowledge graph. It downloads the `codebase-memory-mcp` CLI, verifies it against the SHA-256 checksums published with the upstream release, and registers an MCP server by invoking that CLI's own installer and writing the entry for its own VS Code installation. The boundary follows from that.
 
 In scope for this repository:
 

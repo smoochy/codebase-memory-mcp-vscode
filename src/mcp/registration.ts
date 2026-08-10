@@ -61,6 +61,15 @@ function commandOf(value: unknown): string | null {
 }
 
 /**
+ * What a config file that is not there reads as.
+ *
+ * `null` means "could not be read", which is deliberately not an answer. A file
+ * that does not exist is an answer - nothing is registered - and conflating the
+ * two leaves a fresh installation claiming a registration it does not have.
+ */
+export const NO_CONFIG_FILE = '{}'
+
+/**
  * Interpret the MCP config text.
  *
  * Unreadable or unparsable input yields `unknown`, never `missing`: we must not
@@ -100,54 +109,64 @@ export function readRegistration(text: string | null): RegistrationStatus {
 }
 
 /**
- * Directory name of the active profile, or undefined on the default profile.
+ * Where the VS Code MCP config lives, derived from the extension's own storage
+ * directory.
  *
- * Global storage lives at `User/globalStorage/<publisher>.<name>` by default and
- * at `User/profiles/<id>/globalStorage/<publisher>.<name>` on a named profile,
- * so the profile identifier can be read straight off the storage path.
+ * Deriving it from the home directory instead names the wrong file for any
+ * instance started with `--user-data-dir`, and reads the real profile's
+ * registration while claiming to describe the running one.
+ *
+ * `mcp.json` is always the sibling of `globalStorage`, which places it under
+ * `User/` on the default profile and under `User/profiles/<id>/` on a named one
+ * without either case being spelled out here.
  */
-export function activeProfileDir(storageDir: string): string | undefined {
-  const match = /\/User\/profiles\/([^/]+)\/globalStorage\//.exec(
-    storageDir.replace(/\\/g, '/'),
-  )
-  return match?.[1]
-}
-
-export interface McpPathEnv {
-  platform: NodeJS.Platform
-  home: string
-  /** APPDATA on Windows, undefined elsewhere or when unset. */
-  appData: string | undefined
-  /** Directory name of the active profile, undefined for the default profile. */
-  profileDir: string | undefined
+export function mcpConfigCandidates(storageDir: string): string[] {
+  const storage = storageDir.replace(/\\/g, '/').replace(/\/+$/, '')
+  const marker = '/globalStorage/'
+  const index = storage.lastIndexOf(marker)
+  return index === -1 ? [] : [`${storage.slice(0, index)}/mcp.json`]
 }
 
 /**
- * Where the VS Code MCP config may live, most specific first.
+ * The config text with this instance's MCP entry in it.
  *
- * Named profiles keep their own `mcp.json` under `User/profiles/<id>/`, so
- * checking only the default path would miss the entry for anyone not on the
- * default profile and wrongly report the server as unregistered.
+ * The CLI's own `install` finds VS Code by walking the default config
+ * directory, so an instance started with `--user-data-dir` is never among the
+ * files it writes. The extension knows exactly which file is its own, so it
+ * writes that one itself rather than asking the CLI to guess.
+ *
+ * Everything else in the file is kept, and an entry already carrying one of the
+ * accepted names is updated in place rather than joined by a second one under a
+ * different name. Comments do not survive the round trip: VS Code writes this
+ * file itself and re-reading it through a JSONC editor would cost a dependency
+ * this extension does not have.
  */
-export function mcpConfigCandidates(env: McpPathEnv): string[] {
-  const home = env.home.replace(/\\/g, '/').replace(/\/+$/, '')
-
-  let userDir: string
-  if (env.platform === 'win32') {
-    const roaming = (env.appData ?? `${home}/AppData/Roaming`).replace(/\\/g, '/')
-    userDir = `${roaming}/Code/User`
-  } else if (env.platform === 'darwin') {
-    userDir = `${home}/Library/Application Support/Code/User`
-  } else {
-    userDir = `${home}/.config/Code/User`
+export function withMcpEntry(text: string | null, command: string): string {
+  let parsed: unknown = null
+  if (text !== null && text.trim().length > 0) {
+    try {
+      parsed = JSON.parse(stripJsonComments(text))
+    } catch {
+      // Unparsable, so there is nothing to preserve. Refusing here would leave
+      // the user with a button that cannot ever work.
+      parsed = null
+    }
   }
 
-  const candidates: string[] = []
-  if (env.profileDir !== undefined && env.profileDir.length > 0) {
-    candidates.push(`${userDir}/profiles/${env.profileDir}/mcp.json`)
-  }
-  candidates.push(`${userDir}/mcp.json`)
-  return candidates
+  const root: Record<string, unknown> =
+    typeof parsed === 'object' && parsed !== null ? { ...(parsed as Record<string, unknown>) } : {}
+
+  const existing = root['servers']
+  const servers: Record<string, unknown> =
+    typeof existing === 'object' && existing !== null
+      ? { ...(existing as Record<string, unknown>) }
+      : {}
+
+  const key = MCP_SERVER_KEYS.find((name) => name in servers) ?? MCP_SERVER_KEYS[0]
+  servers[key as string] = { type: 'stdio', command }
+  root['servers'] = servers
+
+  return `${JSON.stringify(root, null, 4)}\n`
 }
 
 /**

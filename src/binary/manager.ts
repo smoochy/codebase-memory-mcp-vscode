@@ -1,6 +1,6 @@
 import { assetName, binaryFileName, checksumsUrl, downloadUrl, type Variant } from './assets'
 import { downloadVerified, followRedirects, resolveLatestTag, type FetchLike } from './fetch'
-import { extractCommand, replaceBinary, type FileOps } from './install'
+import { extractCommand, replaceBinary, tarCommand, type FileOps } from './install'
 import type { Runner } from '../cli/client'
 import type { BinarySource, ExtensionState } from '../state/machine'
 import type { WizardStepId } from '../setup/wizard'
@@ -44,6 +44,8 @@ export interface InstallDeps {
    * location the extension chose.
    */
   installPath: string
+  /** SystemRoot on Windows, so bsdtar can be named in full. Unused elsewhere. */
+  systemRoot?: string
   variant?: Variant
   /** Progress log sink. Callers redact before forwarding to a channel. */
   log?: (message: string) => void
@@ -151,7 +153,11 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
     ops.mkdirp(workDir)
     ops.write(archivePath, archiveBytes)
 
-    const { command, args } = extractCommand(archivePath, extractDir)
+    const { command, args } = extractCommand(
+      archivePath,
+      extractDir,
+      tarCommand(platform, deps.systemRoot, ops.exists),
+    )
     const result = await run(command, args, deps.extractTimeoutMs ?? EXTRACT_TIMEOUT_MS)
     if (result.code !== 0) {
       throw new Error(

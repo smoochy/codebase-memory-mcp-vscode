@@ -2,8 +2,10 @@ import * as assert from 'node:assert/strict'
 import {
   firstRegistration,
   mcpConfigCandidates,
+  NO_CONFIG_FILE,
   readRegistration,
   stripJsonComments,
+  withMcpEntry,
 } from '../../src/mcp/registration'
 
 describe('stripJsonComments', () => {
@@ -63,50 +65,76 @@ describe('readRegistration', () => {
   })
 })
 
+describe('withMcpEntry', () => {
+  const parse = (text: string): Record<string, any> => JSON.parse(text) as Record<string, any>
+
+  it('writes an entry VS Code reads, into a file that does not exist yet', () => {
+    const written = withMcpEntry(null, 'C:/bin/cmm.exe')
+    assert.deepEqual(parse(written).servers['codebase-memory-mcp'], {
+      type: 'stdio',
+      command: 'C:/bin/cmm.exe',
+    })
+    assert.deepEqual(readRegistration(written), { kind: 'present', path: 'C:/bin/cmm.exe' })
+  })
+
+  it('keeps the other servers and the rest of the file', () => {
+    const before = '{ "inputs": [1], "servers": { "other": { "command": "x" } } }'
+    const after = parse(withMcpEntry(before, '/bin/cmm'))
+    assert.deepEqual(after['inputs'], [1])
+    assert.deepEqual(after['servers']['other'], { command: 'x' })
+  })
+
+  // Otherwise a machine that registered under the older name gains a second
+  // entry under the newer one, and both start the same server.
+  it('updates the entry already there rather than adding one beside it', () => {
+    const before = '{"servers": {"codebase-memory": {"type": "stdio", "command": "/old/cmm"}}}'
+    const after = parse(withMcpEntry(before, '/new/cmm'))
+    assert.deepEqual(Object.keys(after['servers']), ['codebase-memory'])
+    assert.equal(after['servers']['codebase-memory'].command, '/new/cmm')
+  })
+
+  it('replaces a file it cannot parse rather than refusing to register', () => {
+    assert.deepEqual(readRegistration(withMcpEntry('{ not json', '/bin/cmm')), {
+      kind: 'present',
+      path: '/bin/cmm',
+    })
+  })
+})
+
 describe('mcpConfigCandidates', () => {
-  const windows = {
-    platform: 'win32' as NodeJS.Platform,
-    home: 'C:/Users/x',
-    appData: 'C:/Users/x/AppData/Roaming',
-    profileDir: undefined,
-  }
+  const extension = 'smoochy.better-codebase-memory-mcp'
 
-  it('uses the roaming directory on Windows', () => {
-    assert.deepEqual(mcpConfigCandidates(windows), ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'])
+  it('names the sibling of globalStorage on the default profile', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`C:/Users/x/AppData/Roaming/Code/User/globalStorage/${extension}`),
+      ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'],
+    )
   })
 
-  it('falls back to a derived roaming path when APPDATA is unset', () => {
-    assert.deepEqual(mcpConfigCandidates({ ...windows, appData: undefined }), [
-      'C:/Users/x/AppData/Roaming/Code/User/mcp.json',
+  it('names the profile own file on a named profile', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`/home/x/.config/Code/User/profiles/-abc123/globalStorage/${extension}`),
+      ['/home/x/.config/Code/User/profiles/-abc123/mcp.json'],
+    )
+  })
+
+  // The bug this replaced: a home-derived path named the real profile's file
+  // and reported its registration as this instance's.
+  it('follows a custom user-data-dir rather than the home directory', () => {
+    assert.deepEqual(mcpConfigCandidates(`D:/tmp/cmm-test/User/globalStorage/${extension}`), [
+      'D:/tmp/cmm-test/User/mcp.json',
     ])
   })
 
-  it('uses the application support directory on macOS', () => {
-    const candidates = mcpConfigCandidates({
-      platform: 'darwin',
-      home: '/Users/x',
-      appData: undefined,
-      profileDir: undefined,
-    })
-    assert.deepEqual(candidates, ['/Users/x/Library/Application Support/Code/User/mcp.json'])
+  it('accepts backslashes', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(`C:\\Users\\x\\AppData\\Roaming\\Code\\User\\globalStorage\\${extension}`),
+      ['C:/Users/x/AppData/Roaming/Code/User/mcp.json'],
+    )
   })
 
-  it('uses the config directory on Linux', () => {
-    const candidates = mcpConfigCandidates({
-      platform: 'linux',
-      home: '/home/x',
-      appData: undefined,
-      profileDir: undefined,
-    })
-    assert.deepEqual(candidates, ['/home/x/.config/Code/User/mcp.json'])
-  })
-
-  it('puts the active profile ahead of the default profile', () => {
-    const candidates = mcpConfigCandidates({ ...windows, profileDir: '-abc123' })
-    assert.deepEqual(candidates, [
-      'C:/Users/x/AppData/Roaming/Code/User/profiles/-abc123/mcp.json',
-      'C:/Users/x/AppData/Roaming/Code/User/mcp.json',
-    ])
+  it('names nothing when the path is not under globalStorage', () => {
+    assert.deepEqual(mcpConfigCandidates('/somewhere/else'), [])
   })
 })
 
@@ -122,6 +150,12 @@ describe('firstRegistration', () => {
 
   it('reports missing when a readable file exists but has no entry', () => {
     assert.deepEqual(firstRegistration([null, '{}']), { kind: 'missing' })
+  })
+
+  // A fresh installation has no mcp.json at all, and reading that as unknown
+  // left the panel reporting a registration it did not have.
+  it('reports missing when the file is not there', () => {
+    assert.deepEqual(firstRegistration([NO_CONFIG_FILE]), { kind: 'missing' })
   })
 
   it('reports unknown when no file could be read at all', () => {

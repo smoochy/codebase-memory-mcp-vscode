@@ -33,8 +33,13 @@ export interface PanelModel {
   loading?: boolean
   /** Which screen the panel shows. Anything but `main` replaces the whole view. */
   view?: 'main' | 'settings'
-  /** True after registering, until the window reloads and the entry takes effect. */
-  restartRequired?: boolean
+  /**
+   * What the pending reload is for, until the window reloads and it takes
+   * effect: a registration the server has not picked up, or a new binary the
+   * running server is not the one from. `true` reads as the registration case,
+   * which is what it meant before there was a second one.
+   */
+  restartRequired?: boolean | 'registration' | 'binary'
   /** CLI settings from `config list`, shown on the settings screen. */
   cliSettings?: CliSetting[]
   /** Host platform, so the uninstall block offers the right shell. */
@@ -638,6 +643,32 @@ function commandLine(label: string, command: string, copyCommand: string): strin
 }
 
 /**
+ * The buttons that copy the register command.
+ *
+ * The Windows spelling starts with the call operator, which PowerShell needs
+ * and which Git Bash reads as a background job, so a second button carries the
+ * POSIX spelling wherever Git Bash is actually installed. This is the same
+ * split the uninstall block makes, for the same reason.
+ */
+function copyRegisterButtons(model: PanelModel): string {
+  const powershell = button(
+    'betterCmm.copyInstallCommand',
+    model.platform === 'win32' && model.gitBashAvailable === true
+      ? 'Copy register command (PowerShell)'
+      : 'Copy register command',
+    'copy',
+    'primary',
+  )
+  if (model.platform !== 'win32' || model.gitBashAvailable !== true) {
+    return powershell
+  }
+  return (
+    powershell +
+    button('betterCmm.copyInstallCommandBash', 'Copy register command (Git Bash)', 'copy', 'primary')
+  )
+}
+
+/**
  * The uninstall block, rendered inside the settings screen.
  *
  * The extension deliberately does not run the CLI's own uninstall: it asks
@@ -773,6 +804,19 @@ function settingsScreen(model: PanelModel, nonce: string): string {
   )
 }
 
+/**
+ * The two log buttons, on every screen that has an Actions section.
+ *
+ * Setup gets them too: an install that fails names a log file, and the panel is
+ * the only place the user can be told where that log is.
+ */
+function logActions(): string[] {
+  return [
+    button('betterCmm.showLogs', 'View extension log', 'logs'),
+    button('betterCmm.showEngineLogs', 'View engine logs', 'logs'),
+  ]
+}
+
 /** Header, notices, actions, project list. Static markup, no framework. */
 export function renderBody(model: PanelModel, nonce: string): string {
   const { state } = model
@@ -795,7 +839,10 @@ export function renderBody(model: PanelModel, nonce: string): string {
           '<li>Installs the binary from ' +
           `<a href="${escapeHtml(upstreamRepoUrl())}">the upstream project</a></li>` +
           '<li>Registers it as an MCP server</li>' +
-          '</ul>',
+          '</ul>' +
+          // Setup is the screen a failing install leaves the user on, and the
+          // failure names a log the user has no way to find otherwise.
+          `<div class="actions grid pair">${logActions().join('')}</div>`,
       ),
     )
     return `<main>${parts.join('')}</main>` + clickHandlerScript(nonce)
@@ -842,7 +889,14 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // Registering only takes effect once the extension host restarts, so saying
   // it succeeded without saying that would leave the user looking for a server
   // that is not there yet.
-  if (model.restartRequired === true) {
+  if (model.restartRequired === 'binary') {
+    parts.push(
+      notice(
+        'warning',
+        'Reload VS Code to run the new binary - the MCP server is still running the old one.',
+      ),
+    )
+  } else if (model.restartRequired === true || model.restartRequired === 'registration') {
     parts.push(
       notice(
         'warning',
@@ -855,14 +909,25 @@ export function renderBody(model: PanelModel, nonce: string): string {
   if (actions.showInstallButton) {
     buttons.push(button('betterCmm.installCli', 'Register MCP server', 'link', 'primary'))
   }
-  // The entry is present, so `showInstallButton` is off - but it points at
-  // another machine, which is the one case where rewriting a registration that
-  // exists is the fix. Reuses the register command rather than a new one.
-  if (state.foreignPlatformEntry !== null && !actions.showInstallButton) {
+  // The entry is present, so `showInstallButton` is off - but it names a binary
+  // this installation is not running, from another machine or from this one,
+  // and rewriting it is the fix in both cases. Nothing is written without the
+  // click: an entry pointing elsewhere can be deliberate. Reuses the register
+  // command rather than adding a second one.
+  if ((state.foreignPlatformEntry !== null || state.pathConflict !== null) && !actions.showInstallButton) {
     buttons.push(
       actions.mayWriteMcpConfig
-        ? button('betterCmm.installCli', 'Register on this machine', 'link', 'primary')
-        : button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'),
+        ? button(
+            'betterCmm.installCli',
+            // "on this machine" answers the other machine's path; it says
+            // nothing about an entry that names a second binary on this one.
+            state.foreignPlatformEntry !== null
+              ? 'Register on this machine'
+              : 'Register the active binary',
+            'link',
+            'primary',
+          )
+        : copyRegisterButtons(model),
     )
   }
   if (actions.showClipboardHint) {
@@ -873,7 +938,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           'Run the register command yourself to finish setup.',
       ),
     )
-    buttons.push(button('betterCmm.copyInstallCommand', 'Copy register command', 'copy', 'primary'))
+    buttons.push(copyRegisterButtons(model))
   }
   // The update pair carries the warning colour, not the call-to-action green:
   // running an outdated engine is the problem being reported, and a button in
@@ -908,11 +973,6 @@ export function renderBody(model: PanelModel, nonce: string): string {
   // No Refresh button here: the title bar already has one, running the same
   // command, and two identical controls in one view only raise the question of
   // how they differ.
-  const logActions = [
-    button('betterCmm.showLogs', 'View extension log', 'logs'),
-    button('betterCmm.showEngineLogs', 'View engine logs', 'logs'),
-  ]
-
   parts.push(
     section(
       'Actions',
@@ -921,7 +981,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           ? ''
           : `<div class="actions grid">${updateActions.join('')}</div>`) +
         `<div class="actions grid">${projectActions.join('')}</div>` +
-        `<div class="actions grid">${logActions.join('')}</div>`,
+        `<div class="actions grid">${logActions().join('')}</div>`,
     ),
   )
   parts.push(
@@ -1035,6 +1095,11 @@ header {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px;
 }
 .actions.grid .action { margin: 0; }
+/* The setup screen has two log buttons and nothing else to pair them with, so
+   they share a row at any panel width rather than falling into a column. */
+.actions.pair { grid-template-columns: 1fr 1fr; }
+.actions.pair .action { min-width: 0; }
+.actions.pair .action span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
   padding: 3px 9px; border-radius: 999px;

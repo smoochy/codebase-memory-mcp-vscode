@@ -8,6 +8,30 @@ export interface FileOps {
 }
 
 /**
+ * Which `tar` to run.
+ *
+ * Windows ships bsdtar as `System32\tar.exe` and it is named in full, because
+ * bare `tar` resolves through PATH and Git for Windows puts GNU tar ahead of
+ * it. GNU tar reads `D:\...` as `host:path` and answers a local archive with
+ * "Cannot connect to D: resolve failed", so which tar runs is not the user's
+ * PATH order to decide. Naming it in full also means no earlier PATH entry can
+ * substitute a different program for it.
+ *
+ * Elsewhere `tar` is the system's own and PATH is the right way to find it.
+ */
+export function tarCommand(
+  platform: NodeJS.Platform,
+  systemRoot: string | undefined,
+  exists: (p: string) => boolean,
+): string {
+  if (platform !== 'win32') {
+    return 'tar'
+  }
+  const bsdtar = `${(systemRoot ?? 'C:\\Windows').replace(/\\/g, '/').replace(/\/+$/, '')}/System32/tar.exe`
+  return exists(bsdtar) ? bsdtar : 'tar'
+}
+
+/**
  * Command that unpacks the release archive.
  *
  * `tar` handles both formats and ships with Windows 10 build 17063 and later,
@@ -17,12 +41,13 @@ export interface FileOps {
 export function extractCommand(
   archive: string,
   targetDir: string,
+  command = 'tar',
 ): { command: string; args: string[] } {
   if (archive.endsWith('.tar.gz')) {
-    return { command: 'tar', args: ['-xzf', archive, '-C', targetDir] }
+    return { command, args: ['-xzf', archive, '-C', targetDir] }
   }
   if (archive.endsWith('.zip')) {
-    return { command: 'tar', args: ['-xf', archive, '-C', targetDir] }
+    return { command, args: ['-xf', archive, '-C', targetDir] }
   }
   throw new Error(`unsupported archive format: ${archive}`)
 }
@@ -76,7 +101,22 @@ export function replaceBinary(
         // Still locked by a running process. The rename below will report it.
       }
     }
-    ops.rename(target, backup)
+    try {
+      ops.rename(target, backup)
+    } catch (cause) {
+      // Nothing has been replaced yet, so the only trace to clear is the file
+      // staged above; saying so is what keeps a locked binary from reading as
+      // a half-finished install.
+      try {
+        ops.remove(staged)
+      } catch {
+        // Leftover scratch next to the target; harmless and replaced next time.
+      }
+      throw new Error(
+        `the installed binary could not be moved aside, so it is unchanged and still in use: ${String(cause)}`,
+        { cause },
+      )
+    }
     movedAside = true
   }
 

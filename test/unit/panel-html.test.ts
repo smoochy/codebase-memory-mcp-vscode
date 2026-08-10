@@ -170,6 +170,22 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /class="action primary setup progress"/)
   })
 
+  // A failed install names a log file, and setup is the screen the user is
+  // left on, so it is the one screen that has to offer both logs.
+  it('offers both logs on the setup screen, side by side', () => {
+    const state = computeState({
+      source: 'auto',
+      managedPath: null,
+      externalPath: null,
+      registration: { kind: 'unknown' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state }), 'n1')
+    assert.match(html, /data-command="betterCmm.showLogs"/)
+    assert.match(html, /data-command="betterCmm.showEngineLogs"/)
+    assert.match(html, /class="actions grid pair"/)
+  })
+
   it('renders a running setup install as a filled bar with its percentage', () => {
     const state = computeState({
       source: 'auto',
@@ -441,6 +457,40 @@ describe('renderBody', () => {
     const html = renderBody(model({ state: foreign }), 'n1')
     assert.match(html, /data-command="betterCmm\.copyInstallCommand"/)
     assert.doesNotMatch(html, /Register on this machine/)
+  })
+
+  // The warning about an entry naming another binary on this machine was a dead
+  // end: the only way out of it was editing mcp.json by hand.
+  it('offers to register the active binary when the entry names a different one', () => {
+    const conflict = computeState({
+      source: 'managed',
+      managedPath: MANAGED,
+      externalPath: null,
+      registration: { kind: 'present', path: 'C:/Windows/System32/where.exe' },
+      platform: 'win32',
+    })
+    const html = renderBody(model({ state: conflict }), 'n1')
+    assert.match(html, /data-command="betterCmm\.installCli"[^>]*>[\s\S]*?Register the active binary/)
+    assert.doesNotMatch(html, /Register on this machine/)
+  })
+
+  // The Windows spelling starts with the call operator, which Git Bash reads
+  // as a background job, so pasting it there registers nothing.
+  it('offers the register command for Git Bash too where it is installed', () => {
+    const external = computeState({
+      source: 'external',
+      managedPath: null,
+      externalPath: 'C:/Users/x/bin/cmm.exe',
+      registration: { kind: 'missing' },
+      platform: 'win32',
+    })
+    const model_ ={ ...model({ state: external }), platform: 'win32' as const, gitBashAvailable: true }
+    const html = renderBody(model_, 'n1')
+    assert.match(html, /data-command="betterCmm\.copyInstallCommand"/)
+    assert.match(html, /data-command="betterCmm\.copyInstallCommandBash"/)
+
+    const withoutBash = renderBody({ ...model_, gitBashAvailable: false }, 'n1')
+    assert.doesNotMatch(withoutBash, /copyInstallCommandBash/)
   })
 
   it('puts the nonce on every script tag', () => {
@@ -723,6 +773,14 @@ describe('renderBody', () => {
   it('warns that a reload is needed once registration has been written', () => {
     const html = renderBody(model({ restartRequired: true }), 'n1')
     assert.match(html, /Reload VS Code/)
+  })
+
+  // The toast that says so is collapsed by default, and the update is taken
+  // from the panel, so the panel is where the user is looking.
+  it('warns in the panel that the new binary needs a reload, not that registration does', () => {
+    const html = renderBody(model({ restartRequired: 'binary' }), 'n1')
+    assert.match(html, /Reload VS Code to run the new binary/)
+    assert.doesNotMatch(html, /finish registering/)
   })
 
   it('does not offer a second Refresh beside the one in the title bar', () => {

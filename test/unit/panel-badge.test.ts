@@ -65,37 +65,48 @@ function provider(): { p: InstanceType<typeof PanelProvider>; view: FakeView } {
   return { p, view }
 }
 
+/** Every badge the provider reported, in order. */
+function reported(p: InstanceType<typeof PanelProvider>): (unknown | undefined)[] {
+  const seen: (unknown | undefined)[] = []
+  p.onBadgeChange((badge) => seen.push(badge))
+  return seen
+}
+
 describe('activity bar badge', () => {
-  it('writes no badge at all on a first activation with nothing pending', () => {
-    const { p, view } = provider()
+  it('reports no badge at all on a first activation with nothing pending', () => {
+    const { p } = provider()
+    const seen = reported(p)
     p.update(modelWith(null))
     assert.deepEqual(
-      view.writes.filter((w) => w !== undefined),
+      seen.filter((w) => w !== undefined),
       [],
       'a fresh install must not claim an update',
     )
   })
 
   it('badges an available update', () => {
-    const { p, view } = provider()
+    const { p } = provider()
+    const seen = reported(p)
     p.update(modelWith('1.1.0'))
-    const last = view.writes[view.writes.length - 1] as { value: number } | undefined
-    assert.equal(last?.value, 1)
+    assert.equal((seen[seen.length - 1] as { value: number } | undefined)?.value, 1)
   })
 
-  it('primes the clear only once a badge has actually been shown', () => {
-    const { p, view } = provider()
+  // The badge exists so an update is visible without opening the panel, so it
+  // must be reported by a refresh that happened before any view was resolved.
+  it('badges before the panel has ever been opened', () => {
+    const p = new PanelProvider({} as never, () => undefined, '0.9.7')
+    const seen = reported(p)
     p.update(modelWith('1.1.0'))
-    // A second view object, as VS Code hands over after the view was hidden:
-    // its badge cache is empty while the icon still shows the count, so the
-    // clear needs something to differ from.
-    const second = new FakeView()
-    p.resolveWebviewView(second as never)
+    assert.equal((seen[seen.length - 1] as { value: number } | undefined)?.value, 1)
+  })
+
+  it('clears the badge once the update is gone, and reports each change once', () => {
+    const { p } = provider()
+    const seen = reported(p)
+    p.update(modelWith('1.1.0'))
+    p.update(modelWith('1.1.0'))
     p.update(modelWith(null))
-    assert.ok(
-      second.writes.some((w) => w !== undefined),
-      'the stale count needs a priming write before it can be cleared',
-    )
-    assert.equal(second.writes[second.writes.length - 1], undefined)
+    assert.equal(seen.length, 3, 'an unchanged badge must not be reported again')
+    assert.equal(seen[seen.length - 1], undefined)
   })
 })
