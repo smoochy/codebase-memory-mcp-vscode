@@ -19,7 +19,7 @@ import { computeState, samePath, updateOffer, type BinarySource, type ExtensionS
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { resolveLatestTag } from './binary/fetch'
+import { resolveLatestTag, withRetry } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
 
@@ -354,9 +354,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // the whole message the panel then shows. Naming the host here is what tells
   // an offline machine apart from a broken install, and it covers every request
   // the extension makes, since they all go through this one function.
+  // The retry sits underneath the naming, not above it: it decides on the raw
+  // cause, and the host is named once, on the failure the user actually sees.
+  const retryingFetch = withRetry(fetch)
   const fetchImpl = async (url: string, init: { redirect: 'manual' }): Promise<Response> => {
     try {
-      return await fetch(url, init)
+      return await retryingFetch(url, init)
     } catch (cause) {
       throw new Error(`could not reach ${new URL(url).host}: ${String(cause)}`, { cause })
     }
