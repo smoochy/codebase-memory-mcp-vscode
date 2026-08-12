@@ -1,5 +1,10 @@
 import * as assert from 'node:assert/strict'
-import { downloadVerified, followRedirects, type FetchLike } from '../../src/binary/fetch'
+import {
+  downloadVerified,
+  followRedirects,
+  withRetry,
+  type FetchLike,
+} from '../../src/binary/fetch'
 
 /** Build a fetch stub from a map of URL to response. */
 function stubFetch(routes: Record<string, Response>, seen: string[] = []): FetchLike {
@@ -98,6 +103,140 @@ describe('followRedirects', () => {
   })
 })
 
+describe('withRetry', () => {
+  /** Answer with each entry in turn: a thrown value is thrown, a response returned. */
+  function scripted(steps: (() => Response | never)[]): { fetch: FetchLike; calls: () => number } {
+    let index = 0
+    return {
+      fetch: async () => {
+        // Past the end, the last step repeats - that is how a permanent failure
+        // is spelled.
+        const step = steps.at(Math.min(index, steps.length - 1))
+        index++
+        if (step === undefined) {
+          throw new Error('scripted fetch has no steps')
+        }
+        return step()
+      },
+      calls: () => index,
+    }
+  }
+
+  const rateLimited = (headers: Record<string, string> = {}): Response =>
+    new Response(null, { status: 429, headers })
+
+  it('retries a thrown transport failure and returns the eventual response', async () => {
+    const waits: number[] = []
+    const script = scripted([
+      () => {
+        throw new TypeError('fetch failed')
+      },
+      () => ok('payload'),
+    ])
+    const response = await withRetry(script.fetch, async (ms) => {
+      waits.push(ms)
+    })(A, { redirect: 'manual' })
+
+    assert.equal(await response.text(), 'payload')
+    assert.equal(script.calls(), 2)
+    assert.deepEqual(waits, [250])
+  })
+
+  it('gives up after the stated bound and throws the last cause', async () => {
+    const waits: number[] = []
+    const script = scripted([
+      () => {
+        throw new TypeError('fetch failed')
+      },
+    ])
+    await assert.rejects(
+      withRetry(script.fetch, async (ms) => {
+        waits.push(ms)
+      })(A, { redirect: 'manual' }),
+      /fetch failed/,
+    )
+    // Three attempts, and the backoff is spent between them rather than after
+    // the last one.
+    assert.equal(script.calls(), 3)
+    assert.deepEqual(waits, [250, 1000])
+  })
+
+  it('retries a 500 and a 429', async () => {
+    for (const status of [500, 429]) {
+      const script = scripted([() => new Response(null, { status }), () => ok('payload')])
+      const response = await withRetry(script.fetch, async () => {})(A, { redirect: 'manual' })
+      assert.equal(response.status, 200)
+      assert.equal(script.calls(), 2)
+    }
+  })
+
+  it('returns a 404 and a 302 untouched', async () => {
+    // 3xx is the normal answer here, not a failure: every request is manual-redirect
+    // and the release lookup exists to read the Location header off a 302.
+    for (const status of [404, 302, 403]) {
+      const script = scripted([() => new Response(null, { status })])
+      const response = await withRetry(script.fetch, async () => {})(A, { redirect: 'manual' })
+      assert.equal(response.status, status)
+      assert.equal(script.calls(), 1)
+    }
+  })
+
+  it('retries a 403 that carries Retry-After, which is how a secondary rate limit arrives', async () => {
+    const script = scripted([
+      () => new Response(null, { status: 403, headers: { 'retry-after': '1' } }),
+      () => ok('payload'),
+    ])
+    const response = await withRetry(script.fetch, async () => {})(A, { redirect: 'manual' })
+    assert.equal(response.status, 200)
+    assert.equal(script.calls(), 2)
+  })
+
+  it('caps Retry-After at the backoff rather than standing for the full window', async () => {
+    const waits: number[] = []
+    const script = scripted([() => rateLimited({ 'retry-after': '60' }), () => ok('payload')])
+    await withRetry(script.fetch, async (ms) => {
+      waits.push(ms)
+    })(A, { redirect: 'manual' })
+    assert.deepEqual(waits, [1000])
+  })
+
+  it('honours a Retry-After shorter than the backoff', async () => {
+    const waits: number[] = []
+    const script = scripted([() => rateLimited({ 'retry-after': '0.1' }), () => ok('payload')])
+    await withRetry(script.fetch, async (ms) => {
+      waits.push(ms)
+    })(A, { redirect: 'manual' })
+    assert.deepEqual(waits, [100])
+  })
+
+  it('falls back to the backoff when Retry-After cannot be read', async () => {
+    const waits: number[] = []
+    const script = scripted([() => rateLimited({ 'retry-after': 'soon' }), () => ok('payload')])
+    await withRetry(script.fetch, async (ms) => {
+      waits.push(ms)
+    })(A, { redirect: 'manual' })
+    assert.deepEqual(waits, [250])
+  })
+
+  it('cancels the body of a response it discards', async () => {
+    let cancelled = false
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('x'))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const script = scripted([
+      () => new Response(stream, { status: 503 }),
+      () => ok('payload'),
+    ])
+    await withRetry(script.fetch, async () => {})(A, { redirect: 'manual' })
+    assert.equal(cancelled, true)
+  })
+})
+
 describe('downloadVerified', () => {
   const CHECKSUMS =
     'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  asset.tar.gz'
@@ -149,6 +288,73 @@ describe('downloadVerified', () => {
     // stream rather than over one chunk.
     assert.equal(new TextDecoder().decode(bytes), 'abc')
     assert.deepEqual(seen, [1 / 3, 1])
+  })
+
+  it('restarts the download when the stream dies after the headers', async () => {
+    const dying = (): Response =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('a'))
+            controller.error(new Error('stream closed'))
+          },
+        }),
+        { status: 200, headers: { 'content-length': '3' } },
+      )
+    const seen: number[] = []
+    const requested: string[] = []
+    let attempt = 0
+    const fetchImpl: FetchLike = async (url) => {
+      requested.push(url)
+      attempt++
+      return attempt === 1 ? dying() : ok('abc')
+    }
+
+    const bytes = await downloadVerified(A, 'asset.tar.gz', CHECKSUMS, fetchImpl, (fraction) =>
+      seen.push(fraction),
+    )
+
+    assert.equal(new TextDecoder().decode(bytes), 'abc')
+    // The chain is walked again from the original URL, because the signed asset
+    // URL it resolves to is short-lived.
+    assert.deepEqual(requested, [A, A])
+    // Progress falls back to zero rather than resuming where the dead stream
+    // stopped. Nothing is reported before that: erroring a stream discards
+    // whatever was still queued on it, so the chunk never reaches the reader.
+    assert.deepEqual(seen, [0])
+  })
+
+  it('gives up after the second attempt at the body', async () => {
+    let attempt = 0
+    const fetchImpl: FetchLike = async () => {
+      attempt++
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(new Error('stream closed'))
+          },
+        }),
+        { status: 200, headers: { 'content-length': '3' } },
+      )
+    }
+    await assert.rejects(
+      downloadVerified(A, 'asset.tar.gz', CHECKSUMS, fetchImpl, () => {}),
+      /stream closed/,
+    )
+    assert.equal(attempt, 2)
+  })
+
+  it('does not re-fetch a body that failed its checksum', async () => {
+    let attempt = 0
+    const fetchImpl: FetchLike = async () => {
+      attempt++
+      return ok('tampered')
+    }
+    await assert.rejects(
+      downloadVerified(A, 'asset.tar.gz', CHECKSUMS, fetchImpl),
+      /checksum mismatch/i,
+    )
+    assert.equal(attempt, 1)
   })
 
   it('downloads without progress when the response declares no length', async () => {

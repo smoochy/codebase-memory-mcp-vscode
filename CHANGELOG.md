@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.15]
+
+- Every request the extension makes now survives a transient failure. github.com refuses individual HTTP/2 streams under load, which arrives as a bare `fetch failed` and clears on the next attempt, and a single one of those used to end the whole Setup run.
+- Retried are thrown transport failures, `429`, `5xx`, and the `403` that carries a `Retry-After`, which is how a secondary rate limit arrives on unauthenticated traffic. A `404`, a plain `403` and every redirect go back untouched: `3xx` is the normal answer here, not a failure.
+- Three attempts per request, waiting 250 ms and then 1 s. A `Retry-After` may shorten that wait but never lengthen it past 1 s, so Setup does not stand still for a full rate-limit window.
+- A download whose stream dies after the headers is started over once rather than failing, walking the redirect chain again because the signed asset URL it resolves to is short-lived. A checksum mismatch is never retried: re-fetching a body that failed its digest would only ask a corrupt cache, or an attacker, a second time.
+- The failure message still names the host that could not be reached, now once the attempts are spent rather than on the first refusal.
+
 ## [0.9.14]
 
 - VS Code now gets the MCP server from a definition provider rather than from `mcp.json`. The server is offered in memory for whichever binary is active and disappears with the window, so nothing about it is written to disk and nothing about it can reach Settings Sync.
