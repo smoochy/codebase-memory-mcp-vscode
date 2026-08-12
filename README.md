@@ -1,18 +1,18 @@
 # Better Codebase Memory MCP
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smoochy.better-codebase-memory-mcp?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=smoochy.better-codebase-memory-mcp) [![Open VSX](https://img.shields.io/open-vsx/v/smoochy/better-codebase-memory-mcp?label=Open%20VSX)](https://open-vsx.org/extension/smoochy/better-codebase-memory-mcp) [![CI](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smoochy.better-codebase-memory-mcp?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=smoochy.better-codebase-memory-mcp) [![Open VSX](https://img.shields.io/open-vsx/v/smoochy/better-codebase-memory-mcp?label=Open%20VSX)](https://open-vsx.org/extension/smoochy/better-codebase-memory-mcp) [![CI](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.101.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-smoochy-7CC6FE?logo=ko-fi&logoColor=000000)](https://ko-fi.com/smoochy) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-smoochy84-E9C46A?logo=buymeacoffee&logoColor=000000)](https://www.buymeacoffee.com/smoochy84)
 
 VS Code panel for operating the `codebase-memory-mcp` engine: install the CLI, register it as an MCP server, watch what it has indexed, and keep it current - without leaving the editor or memorising a command.
 
-This extension is the operator's side of the engine. It resolves which binary is in use, verifies and installs releases, registers the MCP server through the CLI's own installer, and reports index state per repository. It is aimed at people who run [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) as day-to-day tooling and want its upkeep - installation, updates, reindexing, logs - to be visible and reversible rather than implicit.
+This extension is the operator's side of the engine. It resolves which binary is in use, verifies and installs releases, registers the MCP server, and reports index state per repository. It is aimed at people who run [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) as day-to-day tooling and want its upkeep - installation, updates, reindexing, logs - to be visible and reversible rather than implicit.
 
 It is an independent, clean-room TypeScript implementation. It is **not affiliated with** the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
 
 ## What it does
 
-- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server by running the CLI's own `install`. The Setup button fills as its own progress bar while the download runs, so the wait is visible without leaving the panel. The extension never writes an MCP entry of its own.
+- **Setup in one action.** Finds an existing CLI or downloads the release for your platform, then registers it as an MCP server. The Setup button fills as its own progress bar while the download runs, so the wait is visible without leaving the panel.
 - **Verified updates.** A newer release is announced on the activity bar and in the panel. Taking it downloads the asset, checks it against the release's published SHA-256 checksums, and reports progress on the button that started it.
 - **Project overview.** Nodes, edges, project count and total index size, plus a card per repository with its branch, index time and counts.
 - **Reindexing, manual or on commit.** Reindex one project or all of them. Optional auto reindex watches the checked-out commit rather than the file system, so it acts on a pull instead of on every keystroke.
@@ -21,11 +21,15 @@ It is an independent, clean-room TypeScript implementation. It is **not affiliat
 
 ## Requirements
 
-VS Code 1.85 or newer. No other runtime dependency: the extension ships zero npm dependencies and no bundled binary.
+VS Code 1.101 or newer, which is the release that finalised the MCP server definition provider API this extension registers through. No other runtime dependency: the extension ships zero npm dependencies and no bundled binary.
 
 ## Binary management
 
-The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The CLI's own `install` writes an MCP entry naming an absolute path there, so a binary kept elsewhere would leave that entry pointing at a file that does not exist and the server would never start.
+The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The provided server names an absolute path there, so the location is what makes the server startable rather than a preference.
+
+VS Code is served by the extension itself: the active binary is offered through an MCP server definition provider, in memory, for as long as the window is open. Nothing is written to `mcp.json` for it. That file is carried between machines by Settings Sync and holds one absolute command path, so an entry written on one machine names a binary the other does not have; a provided server has no path to sync and each machine offers its own.
+
+Setup still runs the CLI's own `install`, which wires up the other agents it supports. That command detects VS Code as one of them and writes an entry of its own, so the extension removes that one key again straight afterwards and leaves the rest of the file alone. This is a stopgap, and it goes as soon as the CLI can be told to skip an agent.
 
 If you already manage your own installation, the extension prefers it and never overwrites it. Because both end up in the same directory, ownership is decided by a record written at install time rather than by the path: a binary the extension did not install is never updated, overwritten, or offered for removal. For such an installation a new release is reported and linked, but no update button appears - that upgrade is yours to run.
 

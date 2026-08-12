@@ -24,6 +24,19 @@ describe('package.json contributions', () => {
     assert.ok(keys.every((k) => k.startsWith('betterCmm.')))
   })
 
+  // A setting the log never mentions is a setting nobody can debug, and the
+  // watched list is a second copy of the manifest that drifted once already.
+  it('watches every contributed setting for the log', () => {
+    const source = readFileSync('src/extension.ts', 'utf8')
+    const block = /const watchedSettings = \[([^\]]*)\]/.exec(source)?.[1]
+    assert.ok(block, 'watchedSettings not found in src/extension.ts')
+    const watched = [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]).sort()
+    const declared = Object.keys(manifest.contributes.configuration.properties)
+      .map((k) => k.slice('betterCmm.'.length))
+      .sort()
+    assert.deepEqual(watched, declared)
+  })
+
   it('declares binarySource with the three documented values', () => {
     const property = manifest.contributes.configuration.properties['betterCmm.binarySource'] as {
       enum?: string[]

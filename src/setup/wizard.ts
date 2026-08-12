@@ -1,13 +1,10 @@
-import { allowedActions, type ExtensionState } from '../state/machine'
+import { type ExtensionState } from '../state/machine'
 
 export type WizardStepId =
   | 'choose-source'
   | 'download-binary'
   | 'verify-binary'
   | 'register-mcp'
-  | 'copy-install-command'
-  | 'resolve-path-conflict'
-  | 'reregister-foreign-entry'
   | 'add-projects'
   | 'done'
 
@@ -31,21 +28,9 @@ const STEPS: Record<WizardStepId, Omit<WizardStep, 'id'>> = {
     detail: 'Compare the SHA-256 digest against the published checksums.',
   },
   'register-mcp': {
-    title: 'Register the MCP server',
-    detail: 'Run codebase-memory-mcp install, which writes the MCP entry.',
-  },
-  'copy-install-command': {
-    title: 'Register your own installation',
-    detail: 'Copy codebase-memory-mcp install and run it in a terminal.',
-  },
-  'resolve-path-conflict': {
-    title: 'Resolve the registered path',
-    detail: 'The MCP entry points at a different binary than the active one. Re-run the install command so the entry matches.',
-  },
-  'reregister-foreign-entry': {
-    title: 'Register the MCP server on this machine',
+    title: 'Wire up the other agents',
     detail:
-      'The MCP entry was written on another operating system, so the binary it names is not here. Register it again to point the entry at this machine.',
+      'Run codebase-memory-mcp install, which registers the server with the other agents it supports. VS Code is served by the extension itself.',
   },
   'add-projects': {
     title: 'Add repositories',
@@ -73,20 +58,9 @@ export function wizardStepTitle(id: WizardStepId): string {
  */
 export function wizardSteps(state: ExtensionState, hasProjects: boolean): WizardStep[] {
   const ids: WizardStepId[] = []
-  const actions = allowedActions(state)
 
   if (state.kind === 'needs-setup') {
     ids.push('choose-source', 'download-binary', 'verify-binary', 'register-mcp')
-  } else if (state.kind === 'binary-not-registered') {
-    ids.push(actions.showInstallButton ? 'register-mcp' : 'copy-install-command')
-  }
-
-  if (state.pathConflict !== null) {
-    ids.push('resolve-path-conflict')
-  }
-
-  if (state.foreignPlatformEntry !== null) {
-    ids.push('reregister-foreign-entry')
   }
 
   if (!hasProjects) {

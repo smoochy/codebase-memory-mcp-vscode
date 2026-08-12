@@ -1,5 +1,4 @@
 import { MCP_SERVER_KEYS } from '../constants'
-import type { RegistrationStatus } from '../state/machine'
 
 /**
  * Remove comments so `JSON.parse` accepts a VS Code config file.
@@ -52,122 +51,75 @@ export function stripJsonComments(text: string): string {
   return result
 }
 
-function commandOf(value: unknown): string | null {
-  if (typeof value !== 'object' || value === null) {
-    return null
-  }
-  const command = (value as { command?: unknown }).command
-  return typeof command === 'string' && command.length > 0 ? command : null
+/**
+ * Where the VS Code MCP config lives, derived from the extension's own storage
+ * directory.
+ *
+ * Deriving it from the home directory instead names the wrong file for any
+ * instance started with `--user-data-dir`, and reads the real profile's
+ * registration while claiming to describe the running one.
+ *
+ * `mcp.json` is always the sibling of `globalStorage`, which places it under
+ * `User/` on the default profile and under `User/profiles/<id>/` on a named one
+ * without either case being spelled out here.
+ */
+export function mcpConfigCandidates(storageDir: string): string[] {
+  const storage = storageDir.replace(/\\/g, '/').replace(/\/+$/, '')
+  const marker = '/globalStorage/'
+  const index = storage.lastIndexOf(marker)
+  return index === -1 ? [] : [`${storage.slice(0, index)}/mcp.json`]
 }
 
 /**
- * Interpret the MCP config text.
+ * The config text without this extension's MCP entry, or `null` when it holds
+ * no such entry and there is therefore nothing to write back.
  *
- * Unreadable or unparsable input yields `unknown`, never `missing`: we must not
- * push the user towards a reinstall on the strength of a file we could not read.
+ * VS Code gets its server from a definition provider, so an entry on disk is
+ * only ever a second, absolute-path copy of the same server - and `mcp.json` is
+ * carried between machines by Settings Sync, where an absolute path from
+ * another operating system cannot start. The CLI's own `install` still writes
+ * one, having detected VS Code as an agent, so this is what takes it back out.
+ *
+ * Only our own keys go. Everything else in the file is kept, including any
+ * other server the user registered by hand. Comments do not survive the round
+ * trip - VS Code rewrites this file itself, and a JSONC editor would cost a
+ * dependency this extension does not have.
+ *
+ * Unparsable input yields `null` rather than a rewrite: a file we cannot read
+ * is one we must not flatten.
  */
-export function readRegistration(text: string | null): RegistrationStatus {
-  if (text === null) {
-    return { kind: 'unknown' }
+export function withoutMcpEntry(text: string | null): string | null {
+  if (text === null || text.trim().length === 0) {
+    return null
   }
 
   let parsed: unknown
   try {
     parsed = JSON.parse(stripJsonComments(text))
   } catch {
-    return { kind: 'unknown' }
+    return null
   }
-
   if (typeof parsed !== 'object' || parsed === null) {
-    return { kind: 'unknown' }
+    return null
   }
 
-  const root = parsed as Record<string, unknown>
-  for (const container of [root['servers'], root['mcpServers']]) {
-    if (typeof container !== 'object' || container === null) {
+  const root = { ...(parsed as Record<string, unknown>) }
+  let removed = false
+
+  for (const container of ['servers', 'mcpServers']) {
+    const existing = root[container]
+    if (typeof existing !== 'object' || existing === null) {
       continue
     }
-    const servers = container as Record<string, unknown>
+    const servers = { ...(existing as Record<string, unknown>) }
     for (const key of MCP_SERVER_KEYS) {
-      const command = commandOf(servers[key])
-      if (command !== null) {
-        return { kind: 'present', path: command }
+      if (key in servers) {
+        delete servers[key]
+        removed = true
       }
     }
+    root[container] = servers
   }
 
-  return { kind: 'missing' }
-}
-
-/**
- * Directory name of the active profile, or undefined on the default profile.
- *
- * Global storage lives at `User/globalStorage/<publisher>.<name>` by default and
- * at `User/profiles/<id>/globalStorage/<publisher>.<name>` on a named profile,
- * so the profile identifier can be read straight off the storage path.
- */
-export function activeProfileDir(storageDir: string): string | undefined {
-  const match = /\/User\/profiles\/([^/]+)\/globalStorage\//.exec(
-    storageDir.replace(/\\/g, '/'),
-  )
-  return match?.[1]
-}
-
-export interface McpPathEnv {
-  platform: NodeJS.Platform
-  home: string
-  /** APPDATA on Windows, undefined elsewhere or when unset. */
-  appData: string | undefined
-  /** Directory name of the active profile, undefined for the default profile. */
-  profileDir: string | undefined
-}
-
-/**
- * Where the VS Code MCP config may live, most specific first.
- *
- * Named profiles keep their own `mcp.json` under `User/profiles/<id>/`, so
- * checking only the default path would miss the entry for anyone not on the
- * default profile and wrongly report the server as unregistered.
- */
-export function mcpConfigCandidates(env: McpPathEnv): string[] {
-  const home = env.home.replace(/\\/g, '/').replace(/\/+$/, '')
-
-  let userDir: string
-  if (env.platform === 'win32') {
-    const roaming = (env.appData ?? `${home}/AppData/Roaming`).replace(/\\/g, '/')
-    userDir = `${roaming}/Code/User`
-  } else if (env.platform === 'darwin') {
-    userDir = `${home}/Library/Application Support/Code/User`
-  } else {
-    userDir = `${home}/.config/Code/User`
-  }
-
-  const candidates: string[] = []
-  if (env.profileDir !== undefined && env.profileDir.length > 0) {
-    candidates.push(`${userDir}/profiles/${env.profileDir}/mcp.json`)
-  }
-  candidates.push(`${userDir}/mcp.json`)
-  return candidates
-}
-
-/**
- * Interpret the candidate files in order.
- *
- * A present entry wins. Otherwise `missing` is only reported if at least one
- * file was readable, so an unreadable set of files stays `unknown`.
- */
-export function firstRegistration(texts: Array<string | null>): RegistrationStatus {
-  let sawReadable = false
-
-  for (const text of texts) {
-    const status = readRegistration(text)
-    if (status.kind === 'present') {
-      return status
-    }
-    if (status.kind === 'missing') {
-      sawReadable = true
-    }
-  }
-
-  return sawReadable ? { kind: 'missing' } : { kind: 'unknown' }
+  return removed ? `${JSON.stringify(root, null, 4)}\n` : null
 }

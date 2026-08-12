@@ -47,8 +47,16 @@ describe('extension activation', () => {
     assert.equal(vscode.window.terminals.length, terminalsBefore)
   })
 
-  it('copies the install command as well', async () => {
-    await vscode.commands.executeCommand('betterCmm.copyInstallCommand')
-    assert.equal(await vscode.env.clipboard.readText(), 'codebase-memory-mcp install')
+  // The server reaches VS Code through a provider rather than a file, so the
+  // contribution point and the API behind it both have to be there on the host
+  // the engines range now names.
+  it('contributes an MCP server definition provider the host supports', async () => {
+    const extension = vscode.extensions.getExtension(EXTENSION_ID)
+    assert.ok(extension)
+    const contributed = (
+      extension.packageJSON as { contributes: { mcpServerDefinitionProviders?: { id: string }[] } }
+    ).contributes.mcpServerDefinitionProviders
+    assert.deepEqual(contributed?.map((entry) => entry.id), ['betterCmm.codebaseMemory'])
+    assert.equal(typeof vscode.lm.registerMcpServerDefinitionProvider, 'function')
   })
 })

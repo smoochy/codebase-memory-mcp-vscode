@@ -15,10 +15,33 @@ export const ALLOWED_HOSTS: readonly string[] = [
 
 export const MAX_REDIRECTS = 5
 
+/**
+ * Backoff before each retry of a failed request, in milliseconds. Its length is
+ * the attempt bound: two entries mean three attempts.
+ *
+ * The budget is per request, and `followRedirects` issues one request per hop,
+ * so a chain that hits `MAX_REDIRECTS` can spend this budget that many times
+ * over. That is accepted rather than tracked: a total budget would have to be
+ * threaded through the redirect loop, and the case it guards against needs five
+ * hops and a failure on each.
+ */
+export const RETRY_BACKOFF_MS: readonly number[] = [250, 1000]
+
+/** Longest a `Retry-After` header may hold a request, in milliseconds. */
+export const RETRY_AFTER_CAP_MS = 1000
+
+/**
+ * Attempts at reading a response body before giving up.
+ *
+ * A stream that dies after the headers throws outside the request itself, so
+ * the per-request retry above cannot see it. There is no extra backoff here:
+ * the inner retry has already waited.
+ */
+export const DOWNLOAD_ATTEMPTS = 2
+
 /** Keys `codebase-memory-mcp install` may use for its MCP server entry. */
 export const MCP_SERVER_KEYS: readonly string[] = ['codebase-memory-mcp', 'codebase-memory']
 
-export const INSTALL_COMMAND = 'codebase-memory-mcp install'
 export const UNINSTALL_COMMAND = 'codebase-memory-mcp uninstall'
 
 /**
@@ -48,14 +71,23 @@ export function uninstallCommandFor(
   binaryPath: string | null,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  return commandFor(binaryPath, 'uninstall', UNINSTALL_COMMAND, platform)
+}
+
+function commandFor(
+  binaryPath: string | null,
+  subcommand: string,
+  bare: string,
+  platform: NodeJS.Platform,
+): string {
   if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
-    return UNINSTALL_COMMAND
+    return bare
   }
   // PowerShell is the default terminal on Windows, and there a quoted string in
   // command position is a parse error without the call operator. cmd.exe has
   // the opposite rule, so no single spelling suits both and the default shell
   // wins.
-  return platform === 'win32' ? `& "${binaryPath}" uninstall` : `"${binaryPath}" uninstall`
+  return platform === 'win32' ? `& "${binaryPath}" ${subcommand}` : `"${binaryPath}" ${subcommand}`
 }
 
 /**

@@ -1,8 +1,6 @@
 /** Every command the extension registers. The manifest is checked against this list. */
 export const COMMAND_IDS = [
   'betterCmm.runSetup',
-  'betterCmm.installCli',
-  'betterCmm.copyInstallCommand',
   'betterCmm.copyUninstallCommand',
   'betterCmm.updateBinary',
   'betterCmm.addProject',

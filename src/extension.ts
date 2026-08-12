@@ -7,19 +7,19 @@ import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binar
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { INSTALL_COMMAND, uninstallCommandFor, uninstallCommandForBash } from './constants'
+import { uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
-import { activeProfileDir, firstRegistration, mcpConfigCandidates } from './mcp/registration'
+import { mcpConfigCandidates, withoutMcpEntry } from './mcp/registration'
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { advanceIndexRecord, type IndexRecord } from './state/indexRecord'
 import { computeState, samePath, updateOffer, type BinarySource, type ExtensionState } from './state/machine'
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { resolveLatestTag } from './binary/fetch'
+import { resolveLatestTag, withRetry } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
 
@@ -97,11 +97,9 @@ function indexReport(payload: unknown, before?: { nodes?: number; edges?: number
  */
 const OWNED_INSTALL_KEY = 'betterCmm.managedInstallPath'
 const INDEX_RECORDS_KEY = 'betterCmm.indexRecords'
-/** The binary-and-foreign-entry pair we last re-registered over, if any. */
-const AUTO_REREGISTER_KEY = 'betterCmm.autoReregisteredOver'
 
 
-function resolveState(storageDir: string, ownedInstallPath: string | null): ExtensionState {
+function resolveState(ownedInstallPath: string | null): ExtensionState {
   const source = setting<BinarySource>('binarySource', 'auto')
   const configured = setting<string>('externalBinaryPath', '').trim()
 
@@ -132,17 +130,6 @@ function resolveState(storageDir: string, ownedInstallPath: string | null): Exte
     source,
     managedPath: managed !== '' && existsSync(managed) ? managed : null,
     externalPath: external,
-    registration: firstRegistration(
-      mcpConfigCandidates({
-        platform: process.platform,
-        home: homedir(),
-        appData: process.env['APPDATA'],
-        // The active profile directory sits two levels above globalStorage
-        // when VS Code runs on a named profile.
-        profileDir: activeProfileDir(storageDir),
-      }).map(readTextOrNull),
-    ),
-    platform: process.platform,
   })
 }
 
@@ -170,13 +157,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   let projects: ProjectSummary[] = []
   let cliSettings: CliSetting[] = []
   /**
-   * Set once registration succeeds and never cleared.
+   * Set once a newly installed binary replaces the one a server already runs.
    *
-   * The MCP entry is read when the host starts, so writing it mid-session
-   * leaves the server unreachable until a reload. Without saying so, a
-   * successful setup looks broken.
+   * The definition is provided live, so nothing has to be reloaded for the
+   * server to exist - but a server VS Code already started is still the process
+   * from the old file, and saying nothing leaves the user with an update that
+   * appears not to have taken.
    */
-  let restartRequired = false
+  let restartRequired: false | 'binary' = false
 
   /** Path this extension recorded installing, or null when it installed nothing. */
   const ownedInstallPath = (): string | null =>
@@ -362,7 +350,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }),
   )
 
-  const fetchImpl = (url: string, init: { redirect: 'manual' }): Promise<Response> => fetch(url, init)
+  // `fetch` answers an unreachable host with the bare "fetch failed", which is
+  // the whole message the panel then shows. Naming the host here is what tells
+  // an offline machine apart from a broken install, and it covers every request
+  // the extension makes, since they all go through this one function.
+  // The retry sits underneath the naming, not above it: it decides on the raw
+  // cause, and the host is named once, on the failure the user actually sees.
+  const retryingFetch = withRetry(fetch)
+  const fetchImpl = async (url: string, init: { redirect: 'manual' }): Promise<Response> => {
+    try {
+      return await retryingFetch(url, init)
+    } catch (cause) {
+      throw new Error(`could not reach ${new URL(url).host}: ${String(cause)}`, { cause })
+    }
+  }
 
   /**
    * Latest tag seen on GitHub, cached for the whole session.
@@ -396,7 +397,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * rather than decoded.
    */
   const refreshCliSettings = async (): Promise<void> => {
-    const state = resolveState(storageDir, ownedInstallPath())
+    const state = resolveState(ownedInstallPath())
     if (state.activePath === null) {
       cliSettings = []
       panel.updateCliSettings(cliSettings)
@@ -418,55 +419,67 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // an update taken and a later one found are two separate records.
   let updateLogged = false
 
-  /** Guards against a second automatic re-registration starting while one runs. */
-  let autoRegisterInFlight = false
+  /**
+   * The server VS Code is currently being offered, if any.
+   *
+   * The definition is provided rather than written to `mcp.json`, so it lives
+   * in memory for exactly as long as this extension host does and never reaches
+   * Settings Sync. The `version` carries the CLI's own version so that an
+   * update to the same path still reads as a changed server.
+   */
+  let mcpServer: { command: string; version: string } | null = null
+  const mcpServersChanged = new vscode.EventEmitter<void>()
+  context.subscriptions.push(mcpServersChanged)
+  context.subscriptions.push(
+    vscode.lm.registerMcpServerDefinitionProvider('betterCmm.codebaseMemory', {
+      onDidChangeMcpServerDefinitions: mcpServersChanged.event,
+      provideMcpServerDefinitions: () =>
+        mcpServer === null
+          ? []
+          : [
+              new vscode.McpStdioServerDefinition(
+                'Codebase Memory',
+                mcpServer.command,
+                [],
+                {},
+                mcpServer.version,
+              ),
+            ],
+    }),
+  )
 
   /**
-   * Re-register the MCP entry ourselves when it belongs to another machine.
+   * Offer the active binary as the MCP server, and say so when it changes.
    *
-   * Two synced machines rewrite the entry for each other, so the attempt is
-   * remembered per binary-and-entry pair, in global state rather than a session
-   * flag: the same foreign path arriving again after a restart is the ping-pong
-   * and is left alone, while a genuinely new one is still handled. A failure is
-   * not remembered, so fixing whatever broke lets the next refresh try again.
+   * Called from the refresh loop, so every path that can change the active
+   * binary - Setup, an update, a `binarySource` change, a vanished external
+   * install - reaches it without each one having to remember to.
    */
-  const autoReregister = async (state: ExtensionState): Promise<boolean> => {
-    if (
-      state.foreignPlatformEntry === null ||
-      state.effectiveSource !== 'managed' ||
-      autoRegisterInFlight ||
-      !setting('autoReregisterMcpEntry', false)
-    ) {
-      return false
+  const publishMcpServer = (state: ExtensionState, version: string | null): void => {
+    // A version check that failed this tick is not a changed server. Keeping
+    // the last known version for the same command stops one busy binary from
+    // reading as a new server and prompting an agent to refresh its tools.
+    const keptVersion =
+      version ??
+      (state.activePath !== null && state.activePath === mcpServer?.command
+        ? mcpServer.version
+        : 'unknown')
+    const next =
+      state.activePath === null ? null : { command: state.activePath, version: keptVersion }
+    if (next?.command === mcpServer?.command && next?.version === mcpServer?.version) {
+      return
     }
-    const attempt = `${state.activePath ?? ''}<-${state.foreignPlatformEntry.entryPath}`
-    if (context.globalState.get<string>(AUTO_REREGISTER_KEY) === attempt) {
-      return false
-    }
-    autoRegisterInFlight = true
-    try {
-      const result = await registerMcp()
-      if (!result.ok) {
-        warn(`automatic re-registration failed: ${result.error}`)
-        return false
-      }
-      await context.globalState.update(AUTO_REREGISTER_KEY, attempt)
-      restartRequired = true
-      log(
-        `the MCP entry named ${state.foreignPlatformEntry.entryPath}, from another machine, ` +
-          'and was re-registered here automatically.',
-      )
-      return true
-    } finally {
-      autoRegisterInFlight = false
-    }
+    mcpServer = next
+    mcpServersChanged.fire()
+    log(
+      next === null
+        ? 'no binary to offer as an MCP server'
+        : `offering ${next.command} (v${next.version}) as an MCP server`,
+    )
   }
 
   const refresh = async (): Promise<void> => {
-    let state = resolveState(storageDir, ownedInstallPath())
-    if (await autoReregister(state)) {
-      state = resolveState(storageDir, ownedInstallPath())
-    }
+    const state = resolveState(ownedInstallPath())
     let version: string | null = null
     let updateAvailable: string | null = null
 
@@ -569,6 +582,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       )
     }
 
+    publishMcpServer(state, version)
+
     debug(
       `refresh: ${state.kind}, source ${String(state.effectiveSource)}, ` +
         `${String(projects.length)} project(s), CLI ${version ?? 'unknown'}`,
@@ -589,14 +604,48 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   /**
-   * Run the CLI's own `install`, which is what writes the MCP entry.
+   * Take our own entry back out of the `mcp.json` the CLI just wrote.
+   *
+   * VS Code is served by the definition provider, so an entry on disk is a
+   * second copy of the same server carrying an absolute path - and that file is
+   * synced, where another machine's path cannot start. The CLI detects VS Code
+   * as an agent and writes it anyway, with no flag to deselect one, so this
+   * undoes that one key and leaves every other server in the file alone.
+   *
+   * Deliberately a stopgap, removable once the CLI can be told to skip VS Code.
+   * Best-effort by design: the provider is what makes the server reachable, so
+   * a failure here is worth a log line and nothing more.
+   */
+  const dropOwnMcpEntry = (): void => {
+    const target = mcpConfigCandidates(storageDir)[0]
+    if (target === undefined || !existsSync(target)) {
+      return
+    }
+    try {
+      const stripped = withoutMcpEntry(readTextOrNull(target))
+      if (stripped === null) {
+        return
+      }
+      writeFileSync(target, stripped, 'utf8')
+      log(`removed our own MCP entry from ${target}; the server is provided in memory instead`)
+    } catch (cause) {
+      warn(`could not remove our own MCP entry from ${target}: ${String(cause)}`)
+    }
+  }
+
+  /**
+   * Run the CLI's own `install`, which wires up the agents it supports.
+   *
+   * VS Code is not one of them any more as far as this extension is concerned:
+   * the entry the CLI writes for it is removed again straight afterwards, and
+   * the server this window uses comes from the definition provider.
    *
    * The state is resolved fresh rather than passed in: this runs straight
    * after a download, so any state captured before it is already stale and
    * would still report no binary.
    */
   const registerMcp = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const state = resolveState(storageDir, ownedInstallPath())
+    const state = resolveState(ownedInstallPath())
     if (state.activePath === null) {
       return { ok: false, error: 'no binary to register' }
     }
@@ -611,6 +660,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         const detail = output.stderr.trim() || output.stdout.trim() || 'no output'
         return { ok: false, error: `install exited with ${String(output.code)}: ${detail}` }
       }
+      dropOwnMcpEntry()
+      log(`ran ${state.activePath} install`)
       return { ok: true }
     } catch (cause) {
       return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
@@ -662,6 +713,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     arch: process.arch,
     storageDir,
     installPath: managedBinaryPath(homedir(), process.platform),
+    systemRoot: process.env['SystemRoot'],
     // The steps of an install - the URL fetched, the path written - are detail.
     // What the user did and what came of it is logged at info by the caller.
     log: debug,
@@ -673,7 +725,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     (arg?: string, value?: string) => void | Promise<void>
   > = {
     'betterCmm.runSetup': async () => {
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (refuseIfExternal(state, 'Setup')) {
         return
       }
@@ -718,14 +770,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         )
         log(`setup installed ${tag}`)
 
-        // Registration is the second half of the same click. The panel offers
-        // Setup as "installs the binary" plus "registers it as an MCP server",
-        // so stopping after the download and asking the user to run a second
-        // command was the flow contradicting its own description.
+        // Wiring the CLI's other agents is the second half of the same click.
+        // VS Code itself needs nothing from it: the refresh below offers the
+        // new binary through the definition provider.
         const registered = await registerMcp()
-        if (registered.ok) {
-          restartRequired = true
-        }
         await refresh()
         // The setup screen is gone with the install; drop the percentage so a
         // later one does not start from this one's 100.
@@ -733,13 +781,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
         if (registered.ok) {
           void vscode.window.showInformationMessage(
-            `codebase-memory-mcp ${tag} installed and registered as an MCP server.`,
+            `codebase-memory-mcp ${tag} installed and available as an MCP server.`,
           )
         } else {
-          log(`setup: registration failed: ${registered.error}`)
+          log(`setup: wiring the other agents failed: ${registered.error}`)
+          // The server this window uses is provided, not installed, so this is
+          // the other agents going unwired rather than a broken setup.
           void vscode.window
             .showWarningMessage(
-              `codebase-memory-mcp ${tag} installed, but ${wizardStepTitle(
+              `codebase-memory-mcp ${tag} installed and available here, but ${wizardStepTitle(
                 'register-mcp',
               ).toLowerCase()} failed.`,
               'View extension log',
@@ -754,27 +804,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         fail('Setup', cause)
       }
     },
-    'betterCmm.installCli': async () => {
-      const result = await registerMcp()
-      if (result.ok) {
-        restartRequired = true
-      }
-      await refresh()
-      if (!result.ok) {
-        fail('Register MCP server', new Error(result.error))
-      }
-    },
-    'betterCmm.copyInstallCommand': async () => {
-      await vscode.env.clipboard.writeText(INSTALL_COMMAND)
-      void vscode.window.showInformationMessage('Install command copied to the clipboard.')
-    },
     'betterCmm.copyUninstallCommand': async () => {
       // Bound to the resolved binary: the bare name only works when the CLI is
       // on PATH, and a managed install never is, so the copied command failed
       // with "not recognised" exactly for the users who had not installed it
       // themselves.
       await vscode.env.clipboard.writeText(
-        uninstallCommandFor(resolveState(storageDir, ownedInstallPath()).activePath),
+        uninstallCommandFor(resolveState(ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage(
         'Uninstall command copied. Run it in a terminal to remove codebase-memory-mcp itself.',
@@ -782,7 +818,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
     'betterCmm.copyUninstallCommandBash': async () => {
       await vscode.env.clipboard.writeText(
-        uninstallCommandForBash(resolveState(storageDir, ownedInstallPath()).activePath),
+        uninstallCommandForBash(resolveState(ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage('Uninstall command copied for Git Bash.')
     },
@@ -828,7 +864,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
     'betterCmm.copyBinaryDir': async () => {
       debug('copying the binary folder')
-      const active = resolveState(storageDir, ownedInstallPath()).activePath
+      const active = resolveState(ownedInstallPath()).activePath
       if (active === null) {
         return
       }
@@ -849,7 +885,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (key === undefined || value === undefined) {
         return
       }
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (state.activePath === null) {
         return
       }
@@ -878,7 +914,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await refreshCliSettings()
     },
     'betterCmm.updateBinary': async () => {
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (refuseIfExternal(state, 'Update')) {
         return
       }
@@ -927,6 +963,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           throw cause
         }
         log(`update installed ${latestTag} (was ${installed.value})`)
+        // The running server is still the process started from the old binary,
+        // and the toast saying so is collapsed by default. The panel is where
+        // the user just clicked, so it says it too, until the reload.
+        restartRequired = 'binary'
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
         latestTagCache = latestTag
@@ -950,7 +990,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         canSelectMany: true,
         openLabel: 'Add repositories',
       })
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (picked === undefined || state.activePath === null) {
         return
       }
@@ -1000,7 +1040,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
     'betterCmm.removeProject': async (name) => {
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (name === undefined || state.activePath === null) {
         return
       }
@@ -1020,7 +1060,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       if (confirmed !== 'Remove') {
         return
       }
-      await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const result = await new CliClient(state.activePath, runProcess).removeProject(project.name)
+      const label = folderName(project.root_path)
+      if (result.ok) {
+        // What was dropped is the only measure of the removal, and it is gone
+        // from the next refresh onwards, so it is read from the last state.
+        const freed = [
+          typeof project.nodes === 'number' ? `${project.nodes.toLocaleString('en-US')} nodes` : null,
+          typeof project.edges === 'number' ? `${project.edges.toLocaleString('en-US')} edges` : null,
+        ].filter((part): part is string => part !== null)
+        const dropped = freed.length === 0 ? '' : `: ${freed.join(', ')} dropped`
+        log(`User: removed "${label}" (${project.root_path}) from the index${dropped}`)
+      } else {
+        warn(`User: removing "${label}" (${project.root_path}) failed: ${result.error}`)
+      }
       await refresh()
     },
     'betterCmm.refresh': refresh,
@@ -1117,7 +1170,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:smoochy.better-codebase-memory-mcp')
     },
     'betterCmm.reindexProject': async (name) => {
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (name === undefined || state.activePath === null) {
         return
       }
@@ -1167,7 +1220,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     },
     'betterCmm.reindex': async () => {
       log('User: reindex all projects')
-      const state = resolveState(storageDir, ownedInstallPath())
+      const state = resolveState(ownedInstallPath())
       if (state.activePath === null || projects.length === 0) {
         return
       }
@@ -1236,6 +1289,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     vscode.window.registerWebviewViewProvider(PanelProvider.viewType, panel),
   )
 
+  // A webview view only exists once the user has opened it, and `badge` lives
+  // on that object, so the activity bar could not report an update until the
+  // panel had been clicked at least once - the one moment the badge is not
+  // needed. A tree view exists from creation, so this empty one carries the
+  // badge instead. It stays hidden behind its `when` clause, which is also
+  // what keeps the sidebar to a single visible view.
+  const badgeView = vscode.window.createTreeView(PanelProvider.updateViewType, {
+    treeDataProvider: { getChildren: () => [], getTreeItem: (item: never) => item },
+  })
+  context.subscriptions.push(badgeView)
+  panel.onBadgeChange((badge) => {
+    badgeView.badge = badge
+    void vscode.commands.executeCommand(
+      'setContext',
+      'betterCmm.updateAvailable',
+      badge !== undefined,
+    )
+  })
+
   /**
    * Reindex what the checkout has moved past, if the user asked for it.
    *
@@ -1252,7 +1324,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     if (!setting('autoReindex', false)) {
       return
     }
-    const state = resolveState(storageDir, ownedInstallPath())
+    const state = resolveState(ownedInstallPath())
     if (state.activePath === null) {
       return
     }

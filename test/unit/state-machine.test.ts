@@ -1,25 +1,18 @@
 import * as assert from 'node:assert/strict'
 import {
-  allowedActions,
+  mayModifyBinary,
   updateOffer,
   computeState,
-  entryPathPlatform,
-  type RegistrationStatus,
   type StateInput,
 } from '../../src/state/machine'
 
 const MANAGED = 'C:/globalStorage/bin/codebase-memory-mcp.exe'
 const EXTERNAL = 'C:/Users/x/.local/bin/codebase-memory-mcp.exe'
-const present = (path: string): RegistrationStatus => ({ kind: 'present', path })
-const missing: RegistrationStatus = { kind: 'missing' }
-const unknown: RegistrationStatus = { kind: 'unknown' }
 
 const input = (over: Partial<StateInput> = {}): StateInput => ({
   source: 'auto',
   managedPath: null,
   externalPath: null,
-  registration: unknown,
-  platform: 'win32',
   ...over,
 })
 
@@ -32,50 +25,37 @@ describe('computeState', () => {
 
   // Under auto a managed install wins once it exists. It can only exist
   // because the user ran Setup, and Setup is refused while an external binary
-  // is active, so it is a deliberate choice. It also has to win for
-  // correctness: Setup registers the managed path as the MCP command, and
-  // another binary becoming active afterwards leaves that entry aimed
-  // elsewhere - which is exactly the conflict this rule was changed to fix.
+  // is active, so it is a deliberate choice.
   it('prefers the managed binary under auto once one has been installed', () => {
-    const state = computeState(
-      input({ managedPath: MANAGED, externalPath: EXTERNAL, registration: present(MANAGED) }),
-    )
+    const state = computeState(input({ managedPath: MANAGED, externalPath: EXTERNAL }))
     assert.equal(state.kind, 'ready-managed')
     assert.equal(state.activePath, MANAGED)
     assert.equal(state.effectiveSource, 'managed')
-    assert.equal(state.pathConflict, null)
   })
 
   it('prefers an existing installation under auto when nothing is managed', () => {
-    const state = computeState(input({ externalPath: EXTERNAL, registration: present(EXTERNAL) }))
+    const state = computeState(input({ externalPath: EXTERNAL }))
     assert.equal(state.kind, 'ready-external')
     assert.equal(state.activePath, EXTERNAL)
     assert.equal(state.effectiveSource, 'external')
   })
 
   it('uses the managed binary under auto when no external one exists', () => {
-    const state = computeState(input({ managedPath: MANAGED, registration: present(MANAGED) }))
+    const state = computeState(input({ managedPath: MANAGED }))
     assert.equal(state.kind, 'ready-managed')
     assert.equal(state.activePath, MANAGED)
   })
 
   it('ignores an external binary when managed is forced', () => {
     const state = computeState(
-      input({
-        source: 'managed',
-        managedPath: MANAGED,
-        externalPath: EXTERNAL,
-        registration: present(MANAGED),
-      }),
+      input({ source: 'managed', managedPath: MANAGED, externalPath: EXTERNAL }),
     )
     assert.equal(state.kind, 'ready-managed')
     assert.equal(state.activePath, MANAGED)
   })
 
   it('falls back to managed with a notice when the chosen external binary is gone', () => {
-    const state = computeState(
-      input({ source: 'external', managedPath: MANAGED, registration: present(MANAGED) }),
-    )
+    const state = computeState(input({ source: 'external', managedPath: MANAGED }))
     assert.equal(state.kind, 'fallback-managed')
     assert.equal(state.activePath, MANAGED)
     assert.ok(state.notice)
@@ -92,102 +72,13 @@ describe('computeState', () => {
     )
   })
 
-  it('reports a present binary without an MCP entry as not registered', () => {
-    const state = computeState(input({ managedPath: MANAGED, registration: missing }))
-    assert.equal(state.kind, 'binary-not-registered')
+  // The server is provided in memory for whichever binary is active, so there
+  // is no second question of whether that binary is also written down anywhere.
+  it('reports a resolved binary as ready without consulting any config file', () => {
+    const state = computeState(input({ managedPath: MANAGED }))
+    assert.equal(state.kind, 'ready-managed')
     assert.equal(state.activePath, MANAGED)
     assert.equal(state.effectiveSource, 'managed')
-  })
-
-  it('treats an unreadable MCP config as registered to avoid a false alarm', () => {
-    const state = computeState(input({ managedPath: MANAGED, registration: unknown }))
-    assert.equal(state.kind, 'ready-managed')
-    assert.equal(state.pathConflict, null)
-  })
-
-  it('reports a path conflict when the entry points elsewhere', () => {
-    const state = computeState(
-      input({ source: 'managed', managedPath: MANAGED, registration: present(EXTERNAL) }),
-    )
-    assert.equal(state.kind, 'ready-managed')
-    assert.deepEqual(state.pathConflict, { entryPath: EXTERNAL, activePath: MANAGED })
-  })
-
-  it('does not report a conflict when the paths differ only by separator or case', () => {
-    const state = computeState(
-      input({
-        source: 'managed',
-        managedPath: 'C:/globalStorage/bin/codebase-memory-mcp.exe',
-        registration: present('c:\\globalStorage\\bin\\codebase-memory-mcp.exe'),
-      }),
-    )
-    assert.equal(state.pathConflict, null)
-  })
-
-  // Settings Sync carries mcp.json between machines and it holds one absolute
-  // path, so the second machine inherits an entry that names a binary it does
-  // not have. That is a different failure from a same-platform mismatch: the
-  // server is dead rather than aimed at the wrong copy.
-  it('reports a POSIX entry on Windows as a foreign-platform entry', () => {
-    const state = computeState(
-      input({
-        source: 'managed',
-        managedPath: MANAGED,
-        registration: present('/Users/x/.local/bin/codebase-memory-mcp'),
-      }),
-    )
-    assert.equal(state.pathConflict, null)
-    assert.deepEqual(state.foreignPlatformEntry, {
-      entryPath: '/Users/x/.local/bin/codebase-memory-mcp',
-      activePath: MANAGED,
-    })
-  })
-
-  it('reports a Windows entry on POSIX as a foreign-platform entry', () => {
-    const state = computeState(
-      input({
-        platform: 'darwin',
-        source: 'managed',
-        managedPath: '/Users/x/.local/bin/codebase-memory-mcp',
-        registration: present(MANAGED),
-      }),
-    )
-    assert.equal(state.pathConflict, null)
-    assert.equal(state.foreignPlatformEntry?.entryPath, MANAGED)
-  })
-
-  it('keeps a same-platform mismatch as a plain path conflict', () => {
-    const state = computeState(
-      input({ source: 'managed', managedPath: MANAGED, registration: present(EXTERNAL) }),
-    )
-    assert.equal(state.foreignPlatformEntry, null)
-    assert.deepEqual(state.pathConflict, { entryPath: EXTERNAL, activePath: MANAGED })
-  })
-
-  it('keeps an unrecognisable entry path as a plain path conflict', () => {
-    const state = computeState(
-      input({ source: 'managed', managedPath: MANAGED, registration: present('codebase-memory-mcp') }),
-    )
-    assert.equal(state.foreignPlatformEntry, null)
-    assert.equal(state.pathConflict?.entryPath, 'codebase-memory-mcp')
-  })
-})
-
-describe('entryPathPlatform', () => {
-  it('reads a drive letter or a UNC prefix as Windows', () => {
-    assert.equal(entryPathPlatform('C:\\bin\\codebase-memory-mcp.exe'), 'win32')
-    assert.equal(entryPathPlatform('c:/bin/codebase-memory-mcp.exe'), 'win32')
-    assert.equal(entryPathPlatform('\\\\server\\share\\codebase-memory-mcp.exe'), 'win32')
-  })
-
-  it('reads a leading slash as POSIX', () => {
-    assert.equal(entryPathPlatform('/usr/local/bin/codebase-memory-mcp'), 'posix')
-  })
-
-  it('refuses to guess at anything else', () => {
-    assert.equal(entryPathPlatform('codebase-memory-mcp'), null)
-    assert.equal(entryPathPlatform('./bin/codebase-memory-mcp'), null)
-    assert.equal(entryPathPlatform(''), null)
   })
 })
 
@@ -210,7 +101,6 @@ describe('updateOffer', () => {
     assert.equal(updateOffer({ ...base, installedVersion: '1.1.0' }), null)
   })
 
-
   it('respects the checkForUpdates setting', () => {
     assert.equal(updateOffer({ ...base, checkForUpdates: false }), null)
   })
@@ -226,59 +116,29 @@ describe('updateOffer', () => {
   })
 
   // The source no longer gates the offer - an external binary is told about a
-  // release too - but `allowedActions` still decides who gets a button.
+  // release too - but `mayModifyBinary` still decides who gets a button.
   it('offers the tag whatever the binary source, the button is gated elsewhere', () => {
     assert.equal(updateOffer(base), 'v1.0.0')
   })
 })
 
-describe('allowedActions', () => {
-  it('permits updates and MCP writes for a managed binary', () => {
-    const actions = allowedActions(
-      computeState(
-        input({ source: 'managed', managedPath: MANAGED, registration: present(MANAGED) }),
-      ),
+describe('mayModifyBinary', () => {
+  it('permits updates for a managed binary', () => {
+    assert.equal(
+      mayModifyBinary(computeState(input({ source: 'managed', managedPath: MANAGED }))),
+      true,
     )
-    assert.equal(actions.showUpdateButton, true)
-    assert.equal(actions.mayWriteMcpConfig, true)
   })
 
-  it('never writes MCP config or offers updates for an external binary', () => {
-    const actions = allowedActions(
-      computeState(
-        input({ source: 'external', externalPath: EXTERNAL, registration: present(EXTERNAL) }),
-      ),
+  it('never offers updates for an external binary', () => {
+    assert.equal(
+      mayModifyBinary(computeState(input({ source: 'external', externalPath: EXTERNAL }))),
+      false,
     )
-    assert.equal(actions.mayWriteMcpConfig, false)
-    assert.equal(actions.showInstallButton, false)
-    assert.equal(actions.showUpdateButton, false)
-  })
-
-  it('offers install when a managed binary is unregistered', () => {
-    const actions = allowedActions(
-      computeState(input({ source: 'managed', managedPath: MANAGED, registration: missing })),
-    )
-    assert.equal(actions.showInstallButton, true)
-    assert.equal(actions.showClipboardHint, false)
-  })
-
-  it('offers only the clipboard hint when an external binary is unregistered', () => {
-    const actions = allowedActions(
-      computeState(input({ source: 'external', externalPath: EXTERNAL, registration: missing })),
-    )
-    assert.equal(actions.showInstallButton, false)
-    assert.equal(actions.showClipboardHint, true)
   })
 
   it('follows the resolved binary under auto, not the literal setting', () => {
-    const external = allowedActions(
-      computeState(input({ externalPath: EXTERNAL, registration: present(EXTERNAL) })),
-    )
-    assert.equal(external.mayWriteMcpConfig, false)
-
-    const managed = allowedActions(
-      computeState(input({ managedPath: MANAGED, registration: present(MANAGED) })),
-    )
-    assert.equal(managed.mayWriteMcpConfig, true)
+    assert.equal(mayModifyBinary(computeState(input({ externalPath: EXTERNAL }))), false)
+    assert.equal(mayModifyBinary(computeState(input({ managedPath: MANAGED }))), true)
   })
 })

@@ -2,7 +2,20 @@
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-231 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+418 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+
+## Sign-off
+
+Every row below was run against `better-codebase-memory-mcp-0.9.13.vsix` in a scratch profile and passed, on Windows 11 on 2026-08-09 and 2026-08-10 and on macOS on 2026-08-10. Row 13 was run on both platforms; the Linux clipboard variant is still open, and Linux is not a release target for this iteration.
+
+Six rows failed on the first attempt and were fixed on the branch before they passed: #3 reported the bare `fetch failed` with no indication that it was a network problem, #9 warned about an entry naming another binary without offering any way out of it, #11 reported a locked target as a half-finished install, #13 put the bare `codebase-memory-mcp install` in the clipboard instead of the resolved binary, and the same command was unusable in Git Bash, which reads its leading call operator as a background job. Each fix carries a unit test.
+
+Two observations that are behaviour rather than defects, recorded so the next run does not chase them:
+
+- **#15**: node and edge counts do not climb during indexing. Adding a repository is a single CLI call that returns its counts on completion, so the panel has nothing partial to show and the figures jump at the end. 17,748 files indexed in 72 seconds.
+- **#16**: polling pauses when the panel is not visible, so the debug log stops too. Both stop for the same reason.
+
+The extension log twice recorded `listing projects failed: CLI exited with 1` in the seconds after registering the MCP server, healing itself on the next refresh. Tracked separately as a warning with a misleading message, not a release blocker.
 
 **Status legend**
 
@@ -19,9 +32,9 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | # | Area | What to do | Expected | Priority |
 |---|---|---|---|---|
 | 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking |
-| 2 | Download | Run setup, choose `managed` | Binary lands in global storage, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
+| 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking |
-| 8 | MCP entry | After `install`, restart VS Code, check the MCP server list | `codebase-memory-mcp` present and starts | Blocking |
+| 8 | Provided MCP server | After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage` | "Codebase Memory" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install` | Blocking |
 | 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking |
 | 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking |
 
@@ -39,11 +52,11 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 5 | Workspace | Open a repository, look at the project list | Workspace is **not** listed as a project by itself | Blocking |
 | 6 | Add repositories | Add several folders at once | All indexed, `workspaceFolders` unchanged, no folder added to the workspace | Blocking |
 | 7 | Remove project | Remove a project | Confirmation mentions the index only, never the workspace | Blocking |
-| 9 | Path conflict | Point the MCP entry at a different binary by hand | Warning shown, nothing changed automatically | Important |
-| 14 | Foreign-platform entry | Hand-edit the MCP entry to the other operating system's path (`/Users/...` on Windows, `C:\...` on macOS) | Its own warning, not the #9 one: the entry is named as another machine's, the Settings Sync pointer is shown, and a "Register on this machine" button appears | Blocking |
-| 15 | Automatic re-registration | Turn `betterCmm.autoReregisterMcpEntry` on, repeat #14 | The entry is rewritten without a prompt, the reload notice appears, and the extension log records it once - not on every refresh tick | Important |
+| 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important |
+| 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking |
+| 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
-| 13 | Clipboard | Run the copy commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
+| 13 | Clipboard | Run the copy-uninstall commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 
 **#4, #5, #6 and #7 are the requirements you set personally** - the workspace must never be touched, and an installation the extension does not own must never be written to. Worth checking first.
 
@@ -70,11 +83,7 @@ Deferred during implementation; each is recorded in the SDD ledger.
 
 ---
 
-## Not yet run by me
-
-### Running the integration suite (`npm run test:integration`)
-
-**6 passing, 0 failing** as of the last run, alongside 231 unit tests.
+## Running the integration suite (`npm run test:integration`)
 
 ⚠️ **It will not run from a terminal inside VS Code without one change.** VS Code exports `ELECTRON_RUN_AS_NODE=1` to its integrated terminals. That variable makes the downloaded `Code.exe` run as plain Node, so it reports `v24.18.0` and rejects every VS Code flag with `bad option: --disable-extensions` and so on. Clear it first:
 

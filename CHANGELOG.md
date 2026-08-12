@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.9.15]
+
+- Every request the extension makes now survives a transient failure. github.com refuses individual HTTP/2 streams under load, which arrives as a bare `fetch failed` and clears on the next attempt, and a single one of those used to end the whole Setup run.
+- Retried are thrown transport failures, `429`, `5xx`, and the `403` that carries a `Retry-After`, which is how a secondary rate limit arrives on unauthenticated traffic. A `404`, a plain `403` and every redirect go back untouched: `3xx` is the normal answer here, not a failure.
+- Three attempts per request, waiting 250 ms and then 1 s. A `Retry-After` may shorten that wait but never lengthen it past 1 s, so Setup does not stand still for a full rate-limit window.
+- A download whose stream dies after the headers is started over once rather than failing, walking the redirect chain again because the signed asset URL it resolves to is short-lived. A checksum mismatch is never retried: re-fetching a body that failed its digest would only ask a corrupt cache, or an attacker, a second time.
+- The failure message still names the host that could not be reached, now once the attempts are spent rather than on the first refusal.
+
+## [0.9.14]
+
+- VS Code now gets the MCP server from a definition provider rather than from `mcp.json`. The server is offered in memory for whichever binary is active and disappears with the window, so nothing about it is written to disk and nothing about it can reach Settings Sync.
+- That removes the ping-pong between two synced machines outright. `mcp.json` is synced and holds one absolute command path, so a Windows machine and a Mac kept rewriting the entry for each other and each broke the other's server; a provided server has no path to sync.
+- The CLI's own `install` detects VS Code as an agent and writes an entry anyway, so the extension removes that one key again after every `install` it runs, leaving every other server in the file untouched. It is a stopgap, removable once the CLI can be told to skip an agent.
+- `engines.vscode` rises to `^1.101.0`, the release that finalised the provider API. Keeping the file write alive for older hosts would mean two registration paths and the whole foreign-entry branch surviving forever, and the extension has no published users to preserve.
+- Gone with the file entry: the `betterCmm.autoReregisterMcpEntry` setting, the path-conflict and foreign-platform warnings, the "Register MCP server" button and the register-command clipboard buttons. There is no longer a state in which a resolved binary is not registered.
+- Changing the active binary no longer asks for a window reload. The provided definition carries the CLI's version, so a switch or an update makes VS Code offer to refresh the tools instead.
+
+## [0.9.13]
+
+- The panel now reads the MCP registration of the VS Code instance it is running in. It located `mcp.json` from the home directory before, which named the default installation's file whatever `--user-data-dir` the instance was started with, so a second installation was told about a registration that was not its own.
+- An installation with no `mcp.json` at all is now reported as unregistered rather than as registered. A file that is not there is an answer; only a file that exists and cannot be read leaves the state unknown.
+- The managed install on Windows now runs `System32\tar.exe` by name instead of whatever `tar` PATH resolves to. Git for Windows puts GNU tar ahead of it, and GNU tar reads `D:\...` as a remote host, so the download failed with "Cannot connect to D: resolve failed" on any machine whose storage sits off the system drive.
+- Registering now writes the MCP entry into the `mcp.json` of the VS Code instance the extension runs in. The CLI's own `install` finds VS Code by walking the default configuration directory, so a second installation started with `--user-data-dir` was reported as registered while its own config file stayed empty, and pressing "Register MCP server" again changed nothing visible. The CLI install still runs, since it also wires up the other agents it supports.
+- Changing `betterCmm.autoReregisterMcpEntry` is logged like every other setting. The log diffs a hand-maintained list of keys that the setting was never added to, so it was the one setting that changed in silence; a test now fails if the list and the manifest disagree.
+- A finished engine update says in the panel that the running server is still the old binary. It said so only in a notification, which VS Code collapses to a single line by default, so the one instruction that stops the update from looking like it did nothing was the part the user had to unfold.
+- The activity bar reports an available engine update before the panel has ever been opened. The badge lived on the webview view, and VS Code creates that object only when the user clicks the icon, so the one moment the badge had something to say was the one moment it could not be written. It now belongs to an otherwise empty view that exists from activation and stays hidden until there is an update, which also retires the workaround for VS Code dropping the badge's clear.
+- Removing a project is logged, with the folder name the panel shows and the nodes and edges the removal dropped, and a removal the CLI refuses is reported instead of discarded. Every other action on the panel left a line; this one ran silently, its result was never read, and the counts are gone from the next refresh onwards.
+- Automatic re-registration says in the log why it did nothing. Each of its conditions - the setting being off, an external binary, an entry already re-registered once - left the warning on screen with no way to tell the case apart from a broken feature.
+- "Copy register command" copies the command bound to the resolved binary, quoted, the way the uninstall command already was, and offers the Git Bash spelling beside the PowerShell one where Git Bash is installed. The Windows line starts with the call operator, which Git Bash reads as a background job, so the copied command registered nothing there. It copied the bare `codebase-memory-mcp install`, which needs the CLI on `PATH` - and the button only appears for an install the extension does not own, which is the one it can least assume is on it.
+- An MCP entry naming a different binary on this machine offers to point it at the active one. The warning said what was wrong and left no way to act on it, so the only fix was editing `mcp.json` by hand. Nothing is rewritten without the click, since an entry pointing elsewhere can be deliberate.
+- A download that cannot reach GitHub names the host it could not reach. `fetch` answers an unreachable network with "fetch failed" and nothing else, so a machine that was merely offline reported the same three words as a broken install.
+- An engine update that cannot move the running binary aside now says the installation is unchanged, and no longer leaves the downloaded copy next to it. The rename that moves the old binary out of the way sat outside the rollback, so a target another process held open produced a message pointing at a backup that was never created, next to a stray `.new` file.
+- The setup screen carries the "View extension log" and "View engine logs" buttons too. A failing install names a log file, and setup was the one screen that offered no way to open it.
+
 ## [0.9.12]
 
 - An MCP entry naming another operating system's path is now reported as its own case rather than as a generic path conflict. Settings Sync copies `mcp.json` between machines and it holds one absolute path, so a second machine on a different platform inherits an entry it can never start; the panel now says which machine wrote it, offers to register here, and points at switching "MCP Servers" off under Settings Sync, which is the permanent fix.

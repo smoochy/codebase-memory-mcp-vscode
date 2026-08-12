@@ -1,5 +1,11 @@
 import * as assert from 'node:assert/strict'
-import { ALLOWED_HOSTS, BINARY_BASE, UNINSTALL_COMMAND, UPSTREAM, uninstallCommandFor } from '../../src/constants'
+import {
+  ALLOWED_HOSTS,
+  BINARY_BASE,
+  UNINSTALL_COMMAND,
+  UPSTREAM,
+  uninstallCommandFor,
+} from '../../src/constants'
 
 describe('constants', () => {
   it('points at the upstream repository', () => {
