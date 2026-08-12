@@ -1,6 +1,6 @@
 # Better Codebase Memory MCP
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smoochy.better-codebase-memory-mcp?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=smoochy.better-codebase-memory-mcp) [![Open VSX](https://img.shields.io/open-vsx/v/smoochy/better-codebase-memory-mcp?label=Open%20VSX)](https://open-vsx.org/extension/smoochy/better-codebase-memory-mcp) [![CI](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smoochy.better-codebase-memory-mcp?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=smoochy.better-codebase-memory-mcp) [![Open VSX](https://img.shields.io/open-vsx/v/smoochy/better-codebase-memory-mcp?label=Open%20VSX)](https://open-vsx.org/extension/smoochy/better-codebase-memory-mcp) [![CI](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/smoochy/codebase-memory-mcp-vscode/actions/workflows/ci.yml) ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.101.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-green)
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-smoochy-7CC6FE?logo=ko-fi&logoColor=000000)](https://ko-fi.com/smoochy) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-smoochy84-E9C46A?logo=buymeacoffee&logoColor=000000)](https://www.buymeacoffee.com/smoochy84)
 
@@ -21,13 +21,15 @@ It is an independent, clean-room TypeScript implementation. It is **not affiliat
 
 ## Requirements
 
-VS Code 1.85 or newer. No other runtime dependency: the extension ships zero npm dependencies and no bundled binary.
+VS Code 1.101 or newer, which is the release that finalised the MCP server definition provider API this extension registers through. No other runtime dependency: the extension ships zero npm dependencies and no bundled binary.
 
 ## Binary management
 
-The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The MCP entry names an absolute path there, so a binary kept elsewhere would leave that entry pointing at a file that does not exist and the server would never start.
+The CLI is downloaded at runtime from the upstream project's GitHub releases, verified against the release's SHA-256 checksums, and installed to `~/.local/bin`. That location is not a preference. The provided server names an absolute path there, so the location is what makes the server startable rather than a preference.
 
-Registering runs the CLI's own `install`, which wires up every agent it supports, and then writes the entry into the `mcp.json` of the VS Code installation the extension is running in. That second step is the extension's own: the CLI finds VS Code by walking the default configuration directory, so a second installation started with its own `--user-data-dir` is not among the files it writes. Anything already in that file is kept.
+VS Code is served by the extension itself: the active binary is offered through an MCP server definition provider, in memory, for as long as the window is open. Nothing is written to `mcp.json` for it. That file is carried between machines by Settings Sync and holds one absolute command path, so an entry written on one machine names a binary the other does not have; a provided server has no path to sync and each machine offers its own.
+
+Setup still runs the CLI's own `install`, which wires up the other agents it supports. That command detects VS Code as one of them and writes an entry of its own, so the extension removes that one key again straight afterwards and leaves the rest of the file alone. This is a stopgap, and it goes as soon as the CLI can be told to skip an agent.
 
 If you already manage your own installation, the extension prefers it and never overwrites it. Because both end up in the same directory, ownership is decided by a record written at install time rather than by the path: a binary the extension did not install is never updated, overwritten, or offered for removal. For such an installation a new release is reported and linked, but no update button appears - that upgrade is yours to run.
 

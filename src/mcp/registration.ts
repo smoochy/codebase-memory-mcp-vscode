@@ -1,5 +1,4 @@
 import { MCP_SERVER_KEYS } from '../constants'
-import type { RegistrationStatus } from '../state/machine'
 
 /**
  * Remove comments so `JSON.parse` accepts a VS Code config file.
@@ -52,62 +51,6 @@ export function stripJsonComments(text: string): string {
   return result
 }
 
-function commandOf(value: unknown): string | null {
-  if (typeof value !== 'object' || value === null) {
-    return null
-  }
-  const command = (value as { command?: unknown }).command
-  return typeof command === 'string' && command.length > 0 ? command : null
-}
-
-/**
- * What a config file that is not there reads as.
- *
- * `null` means "could not be read", which is deliberately not an answer. A file
- * that does not exist is an answer - nothing is registered - and conflating the
- * two leaves a fresh installation claiming a registration it does not have.
- */
-export const NO_CONFIG_FILE = '{}'
-
-/**
- * Interpret the MCP config text.
- *
- * Unreadable or unparsable input yields `unknown`, never `missing`: we must not
- * push the user towards a reinstall on the strength of a file we could not read.
- */
-export function readRegistration(text: string | null): RegistrationStatus {
-  if (text === null) {
-    return { kind: 'unknown' }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(stripJsonComments(text))
-  } catch {
-    return { kind: 'unknown' }
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) {
-    return { kind: 'unknown' }
-  }
-
-  const root = parsed as Record<string, unknown>
-  for (const container of [root['servers'], root['mcpServers']]) {
-    if (typeof container !== 'object' || container === null) {
-      continue
-    }
-    const servers = container as Record<string, unknown>
-    for (const key of MCP_SERVER_KEYS) {
-      const command = commandOf(servers[key])
-      if (command !== null) {
-        return { kind: 'present', path: command }
-      }
-    }
-  }
-
-  return { kind: 'missing' }
-}
-
 /**
  * Where the VS Code MCP config lives, derived from the extension's own storage
  * directory.
@@ -128,65 +71,55 @@ export function mcpConfigCandidates(storageDir: string): string[] {
 }
 
 /**
- * The config text with this instance's MCP entry in it.
+ * The config text without this extension's MCP entry, or `null` when it holds
+ * no such entry and there is therefore nothing to write back.
  *
- * The CLI's own `install` finds VS Code by walking the default config
- * directory, so an instance started with `--user-data-dir` is never among the
- * files it writes. The extension knows exactly which file is its own, so it
- * writes that one itself rather than asking the CLI to guess.
+ * VS Code gets its server from a definition provider, so an entry on disk is
+ * only ever a second, absolute-path copy of the same server - and `mcp.json` is
+ * carried between machines by Settings Sync, where an absolute path from
+ * another operating system cannot start. The CLI's own `install` still writes
+ * one, having detected VS Code as an agent, so this is what takes it back out.
  *
- * Everything else in the file is kept, and an entry already carrying one of the
- * accepted names is updated in place rather than joined by a second one under a
- * different name. Comments do not survive the round trip: VS Code writes this
- * file itself and re-reading it through a JSONC editor would cost a dependency
- * this extension does not have.
+ * Only our own keys go. Everything else in the file is kept, including any
+ * other server the user registered by hand. Comments do not survive the round
+ * trip - VS Code rewrites this file itself, and a JSONC editor would cost a
+ * dependency this extension does not have.
+ *
+ * Unparsable input yields `null` rather than a rewrite: a file we cannot read
+ * is one we must not flatten.
  */
-export function withMcpEntry(text: string | null, command: string): string {
-  let parsed: unknown = null
-  if (text !== null && text.trim().length > 0) {
-    try {
-      parsed = JSON.parse(stripJsonComments(text))
-    } catch {
-      // Unparsable, so there is nothing to preserve. Refusing here would leave
-      // the user with a button that cannot ever work.
-      parsed = null
-    }
+export function withoutMcpEntry(text: string | null): string | null {
+  if (text === null || text.trim().length === 0) {
+    return null
   }
 
-  const root: Record<string, unknown> =
-    typeof parsed === 'object' && parsed !== null ? { ...(parsed as Record<string, unknown>) } : {}
-
-  const existing = root['servers']
-  const servers: Record<string, unknown> =
-    typeof existing === 'object' && existing !== null
-      ? { ...(existing as Record<string, unknown>) }
-      : {}
-
-  const key = MCP_SERVER_KEYS.find((name) => name in servers) ?? MCP_SERVER_KEYS[0]
-  servers[key as string] = { type: 'stdio', command }
-  root['servers'] = servers
-
-  return `${JSON.stringify(root, null, 4)}\n`
-}
-
-/**
- * Interpret the candidate files in order.
- *
- * A present entry wins. Otherwise `missing` is only reported if at least one
- * file was readable, so an unreadable set of files stays `unknown`.
- */
-export function firstRegistration(texts: Array<string | null>): RegistrationStatus {
-  let sawReadable = false
-
-  for (const text of texts) {
-    const status = readRegistration(text)
-    if (status.kind === 'present') {
-      return status
-    }
-    if (status.kind === 'missing') {
-      sawReadable = true
-    }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stripJsonComments(text))
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null
   }
 
-  return sawReadable ? { kind: 'missing' } : { kind: 'unknown' }
+  const root = { ...(parsed as Record<string, unknown>) }
+  let removed = false
+
+  for (const container of ['servers', 'mcpServers']) {
+    const existing = root[container]
+    if (typeof existing !== 'object' || existing === null) {
+      continue
+    }
+    const servers = { ...(existing as Record<string, unknown>) }
+    for (const key of MCP_SERVER_KEYS) {
+      if (key in servers) {
+        delete servers[key]
+        removed = true
+      }
+    }
+    root[container] = servers
+  }
+
+  return removed ? `${JSON.stringify(root, null, 4)}\n` : null
 }

@@ -9,8 +9,6 @@ const state = (over: Partial<StateInput>) =>
     source: 'auto',
     managedPath: null,
     externalPath: null,
-    registration: { kind: 'unknown' },
-    platform: 'win32',
     ...over,
   })
 const ids = (...args: Parameters<typeof wizardSteps>) => wizardSteps(...args).map((s) => s.id)
@@ -26,62 +24,32 @@ describe('wizardSteps', () => {
     ])
   })
 
-  it('skips the download once a managed binary is present', () => {
-    const s = state({ source: 'managed', managedPath: MANAGED, registration: { kind: 'missing' } })
-    assert.deepEqual(ids(s, false), ['register-mcp', 'add-projects'])
+  // The server is provided in memory once a binary resolves, so a present
+  // binary has no registration step left to take.
+  it('skips setup entirely once a binary is present', () => {
+    const s = state({ source: 'managed', managedPath: MANAGED })
+    assert.deepEqual(ids(s, false), ['add-projects'])
   })
 
-  it('puts registration before adding projects, since an unregistered server never starts', () => {
-    const s = state({ source: 'managed', managedPath: MANAGED, registration: { kind: 'missing' } })
-    const steps = ids(s, false)
-    assert.ok(steps.indexOf('register-mcp') < steps.indexOf('add-projects'))
-  })
-
-  it('offers the clipboard step instead of registration for an external binary', () => {
-    const s = state({ source: 'external', externalPath: EXTERNAL, registration: { kind: 'missing' } })
-    const steps = ids(s, false)
-    assert.ok(steps.includes('copy-install-command'))
-    assert.ok(!steps.includes('register-mcp'))
-    assert.ok(!steps.includes('download-binary'))
+  it('asks nothing of an external binary beyond the projects', () => {
+    const s = state({ source: 'external', externalPath: EXTERNAL })
+    assert.deepEqual(ids(s, false), ['add-projects'])
   })
 
   it('reports done when everything is in place', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: MANAGED },
-    })
-    assert.deepEqual(ids(s, true), ['done'])
-  })
-
-  it('still asks for projects when none are indexed yet', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: MANAGED },
-    })
-    assert.deepEqual(ids(s, false), ['add-projects'])
+    assert.deepEqual(ids(state({ source: 'managed', managedPath: MANAGED }), true), ['done'])
   })
 
   it('gives every step a title and a detail, so no step renders blank', () => {
     const byId = new Map<string, WizardStep>()
-    // Sweep every reachable state combination so each WizardStepId is hit at least once,
-    // rather than reading text off one state's output (which only covers 5 of the ids).
+    // Sweep every reachable state combination so each WizardStepId is hit at
+    // least once, rather than reading text off one state's output.
     for (const source of ['auto', 'managed', 'external'] as const) {
       for (const managedPath of [null, MANAGED]) {
         for (const externalPath of [null, EXTERNAL]) {
-          for (const registration of [
-            { kind: 'missing' as const },
-            { kind: 'present' as const, path: MANAGED },
-            { kind: 'present' as const, path: 'C:/other/path' },
-            { kind: 'present' as const, path: '/other/path' },
-            { kind: 'unknown' as const },
-          ]) {
-            for (const hasProjects of [false, true]) {
-              const s = state({ source, managedPath, externalPath, registration })
-              for (const step of wizardSteps(s, hasProjects)) {
-                byId.set(step.id, step)
-              }
+          for (const hasProjects of [false, true]) {
+            for (const step of wizardSteps(state({ source, managedPath, externalPath }), hasProjects)) {
+              byId.set(step.id, step)
             }
           }
         }
@@ -100,45 +68,5 @@ describe('wizardSteps', () => {
     for (const step of wizardSteps(state({}), false)) {
       assert.equal(wizardStepTitle(step.id), step.title)
     }
-  })
-
-  it('emits resolve-path-conflict instead of done when the registered path disagrees, even with projects', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: 'C:/other/path' },
-    })
-    assert.deepEqual(ids(s, true), ['resolve-path-conflict'])
-  })
-
-  it('puts resolve-path-conflict before add-projects, since a wrong entry makes indexing point at the wrong store', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: 'C:/other/path' },
-    })
-    assert.deepEqual(ids(s, false), ['resolve-path-conflict', 'add-projects'])
-  })
-
-  // The entry names a path from another operating system, which is a dead
-  // server rather than a wrong copy, so it gets its own step.
-  it('emits reregister-foreign-entry when the entry belongs to another platform', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: '/Users/x/.local/bin/cmm' },
-    })
-    assert.deepEqual(ids(s, true), ['reregister-foreign-entry'])
-    assert.deepEqual(ids(s, false), ['reregister-foreign-entry', 'add-projects'])
-  })
-
-  it('leaves a conflict-free state unaffected', () => {
-    const s = state({
-      source: 'managed',
-      managedPath: MANAGED,
-      registration: { kind: 'present', path: MANAGED },
-    })
-    assert.deepEqual(ids(s, true), ['done'])
-    assert.deepEqual(ids(s, false), ['add-projects'])
   })
 })

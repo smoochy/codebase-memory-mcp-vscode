@@ -2,25 +2,12 @@ import { compareVersions } from '../binary/assets'
 
 export type BinarySource = 'auto' | 'managed' | 'external'
 
-export type StateKind =
-  | 'ready-managed'
-  | 'ready-external'
-  | 'binary-not-registered'
-  | 'fallback-managed'
-  | 'needs-setup'
-
-/** What we could learn about the VS Code MCP entry. */
-export type RegistrationStatus =
-  | { kind: 'present'; path: string }
-  | { kind: 'missing' }
-  | { kind: 'unknown' }
+export type StateKind = 'ready-managed' | 'ready-external' | 'fallback-managed' | 'needs-setup'
 
 export interface StateInput {
   source: BinarySource
   managedPath: string | null
   externalPath: string | null
-  registration: RegistrationStatus
-  platform: NodeJS.Platform
 }
 
 export interface ExtensionState {
@@ -29,42 +16,12 @@ export interface ExtensionState {
   effectiveSource: 'managed' | 'external' | null
   /** User-visible note, for example the fallback from external to managed. */
   notice: string | null
-  pathConflict: { entryPath: string; activePath: string } | null
-  /**
-   * The MCP entry names a path belonging to another operating system.
-   *
-   * Kept apart from `pathConflict` because the two are different failures:
-   * a same-platform mismatch points at a binary that could exist, while this
-   * one cannot be reached at all, and re-registering here breaks the machine
-   * that wrote it. Mutually exclusive with `pathConflict`.
-   */
-  foreignPlatformEntry: { entryPath: string; activePath: string } | null
-}
-
-export interface AllowedActions {
-  showInstallButton: boolean
-  showUpdateButton: boolean
-  mayWriteMcpConfig: boolean
-  showClipboardHint: boolean
 }
 
 /** Compare paths tolerating separator and case differences on Windows. */
 export function samePath(a: string, b: string): boolean {
   const normalize = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
   return normalize(a) === normalize(b)
-}
-
-/**
- * Which operating system's path shape this is, or null when it fits neither.
- *
- * Decided by shape alone, never by probing the filesystem: the whole point of
- * the foreign-entry case is a path that is absent here.
- */
-export function entryPathPlatform(path: string): 'win32' | 'posix' | null {
-  if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\')) {
-    return 'win32'
-  }
-  return path.startsWith('/') ? 'posix' : null
 }
 
 /**
@@ -76,7 +33,7 @@ export function entryPathPlatform(path: string): 'win32' | 'posix' | null {
  * CLI's own installer writes to the same directory.
  */
 export function computeState(input: StateInput): ExtensionState {
-  const { source, managedPath, externalPath, registration, platform } = input
+  const { source, managedPath, externalPath } = input
 
   let activePath: string | null = null
   let effectiveSource: 'managed' | 'external' | null = null
@@ -121,50 +78,10 @@ export function computeState(input: StateInput): ExtensionState {
   }
 
   if (activePath === null) {
-    return {
-      kind: 'needs-setup',
-      activePath: null,
-      effectiveSource: null,
-      notice,
-      pathConflict: null,
-      foreignPlatformEntry: null,
-    }
+    return { kind: 'needs-setup', activePath: null, effectiveSource: null, notice }
   }
 
-  // A binary without an MCP entry never starts, because VS Code owns the server.
-  if (registration.kind === 'missing') {
-    return {
-      kind: 'binary-not-registered',
-      activePath,
-      effectiveSource,
-      notice,
-      pathConflict: null,
-      foreignPlatformEntry: null,
-    }
-  }
-
-  const mismatch =
-    registration.kind === 'present' && !samePath(registration.path, activePath)
-      ? { entryPath: registration.path, activePath }
-      : null
-
-  // Settings Sync syncs mcp.json, which holds one absolute command path, so a
-  // second machine on another operating system inherits an entry it can never
-  // start. An unrecognisable shape stays a plain conflict rather than being
-  // guessed at as foreign.
-  const foreign =
-    mismatch !== null &&
-    entryPathPlatform(mismatch.entryPath) !== null &&
-    entryPathPlatform(mismatch.entryPath) !== (platform === 'win32' ? 'win32' : 'posix')
-
-  return {
-    kind,
-    activePath,
-    effectiveSource,
-    notice,
-    pathConflict: foreign ? null : mismatch,
-    foreignPlatformEntry: foreign ? mismatch : null,
-  }
+  return { kind, activePath, effectiveSource, notice }
 }
 
 /**
@@ -174,7 +91,7 @@ export function computeState(input: StateInput): ExtensionState {
  * that decides whether the panel says anything about a newer release at all:
  * only when the user left the check enabled, and only when both versions are
  * actually known. Who may act on it is a separate question, answered by
- * `allowedActions` - an external binary is told, never updated.
+ * `mayModifyBinary` - an external binary is told, never updated.
  */
 export function updateOffer(input: {
   installedVersion: string | null
@@ -192,17 +109,13 @@ export function updateOffer(input: {
 }
 
 /**
- * What the UI may offer. We never write into an installation we do not own,
- * so an external binary gets neither an install nor an update button.
+ * Whether the extension may write into the active installation.
+ *
+ * Registering the MCP server is no longer part of this question: the server is
+ * provided in memory for whichever binary is active, which writes nothing. What
+ * is left is the update path, and we never overwrite an installation we do not
+ * own.
  */
-export function allowedActions(state: ExtensionState): AllowedActions {
-  const managed = state.effectiveSource === 'managed'
-  const unregistered = state.kind === 'binary-not-registered'
-
-  return {
-    showInstallButton: managed && unregistered,
-    showUpdateButton: managed && !unregistered,
-    mayWriteMcpConfig: managed,
-    showClipboardHint: !managed && unregistered,
-  }
+export function mayModifyBinary(state: ExtensionState): boolean {
+  return state.effectiveSource === 'managed'
 }

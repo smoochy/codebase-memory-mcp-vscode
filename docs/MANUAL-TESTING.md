@@ -34,7 +34,7 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking |
 | 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking |
-| 8 | MCP entry | After `install`, restart VS Code, check the MCP server list | `codebase-memory-mcp` present and starts, and the entry is in this installation's own `mcp.json` - the one beside its `globalStorage`, not the default profile's | Blocking |
+| 8 | Provided MCP server | After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage` | "Codebase Memory" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install` | Blocking |
 | 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking |
 | 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking |
 
@@ -52,11 +52,11 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 5 | Workspace | Open a repository, look at the project list | Workspace is **not** listed as a project by itself | Blocking |
 | 6 | Add repositories | Add several folders at once | All indexed, `workspaceFolders` unchanged, no folder added to the workspace | Blocking |
 | 7 | Remove project | Remove a project | Confirmation mentions the index only, never the workspace | Blocking |
-| 9 | Path conflict | Point the MCP entry at a different binary by hand | Warning shown, nothing changed automatically | Important |
-| 14 | Foreign-platform entry | Hand-edit the MCP entry to the other operating system's path (`/Users/...` on Windows, `C:\...` on macOS) | Its own warning, not the #9 one: the entry is named as another machine's, the Settings Sync pointer is shown, and a "Register on this machine" button appears | Blocking |
-| 15 | Automatic re-registration | Turn `betterCmm.autoReregisterMcpEntry` on, repeat #14 | The entry is rewritten without a prompt, the reload notice appears, and the extension log records it once - not on every refresh tick | Important |
+| 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important |
+| 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking |
+| 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
-| 13 | Clipboard | Run the copy commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
+| 13 | Clipboard | Run the copy-uninstall commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 
 **#4, #5, #6 and #7 are the requirements you set personally** - the workspace must never be touched, and an installation the extension does not own must never be written to. Worth checking first.
 
