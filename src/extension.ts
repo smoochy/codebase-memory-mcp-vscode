@@ -141,6 +141,8 @@ function resolveState(ownedInstallPath: string | null): ExtensionState {
  */
 export interface ExtensionApi {
   panelHtmlForTests?: () => string
+  /** How often the hidden-panel update check has run. See `updateBadgeCheck`. */
+  updateChecksForTests?: () => number
 }
 
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
@@ -420,6 +422,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // panel, because installing one goes through it.
   let lastKnownVersion: string | null = null
 
+  /** Test-only counter, read through `updateChecksForTests`. */
+  let updateChecks = 0
+
   /**
    * The server VS Code is currently being offered, if any.
    *
@@ -614,6 +619,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * reason the badge lives on a view of its own.
    */
   const updateBadgeCheck = async (): Promise<void> => {
+    // Counted before the settings are read: what the integration tier has to
+    // prove is that the timer reaches this at all with the panel hidden, and
+    // on a host with no CLI installed there is no offer to observe instead.
+    updateChecks += 1
     const checkForUpdates = setting('checkForUpdates', true)
     if (!checkForUpdates || lastKnownVersion === null) {
       return
@@ -1483,7 +1492,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // rather than widening the exported surface for no user-facing reason.
   return context.extensionMode === vscode.ExtensionMode.Production
     ? {}
-    : { panelHtmlForTests: () => panel.renderedHtml }
+    : {
+        panelHtmlForTests: () => panel.renderedHtml,
+        updateChecksForTests: () => updateChecks,
+      }
 }
 
 export function deactivate(): void {
