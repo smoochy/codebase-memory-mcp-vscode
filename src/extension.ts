@@ -453,10 +453,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * install - reaches it without each one having to remember to.
    */
   const publishMcpServer = (state: ExtensionState, version: string | null): void => {
+    // A version check that failed this tick is not a changed server. Keeping
+    // the last known version for the same command stops one busy binary from
+    // reading as a new server and prompting an agent to refresh its tools.
+    const keptVersion =
+      version ??
+      (state.activePath !== null && state.activePath === mcpServer?.command
+        ? mcpServer.version
+        : 'unknown')
     const next =
-      state.activePath === null
-        ? null
-        : { command: state.activePath, version: version ?? 'unknown' }
+      state.activePath === null ? null : { command: state.activePath, version: keptVersion }
     if (next?.command === mcpServer?.command && next?.version === mcpServer?.version) {
       return
     }

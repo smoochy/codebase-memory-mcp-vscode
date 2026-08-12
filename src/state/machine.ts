@@ -91,7 +91,7 @@ export function computeState(input: StateInput): ExtensionState {
  * that decides whether the panel says anything about a newer release at all:
  * only when the user left the check enabled, and only when both versions are
  * actually known. Who may act on it is a separate question, answered by
- * `allowedActions` - an external binary is told, never updated.
+ * `mayModifyBinary` - an external binary is told, never updated.
  */
 export function updateOffer(input: {
   installedVersion: string | null
