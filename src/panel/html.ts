@@ -2,7 +2,7 @@ import { releaseNotesUrlOrNull, upstreamRepoUrl } from '../binary/assets'
 import { uninstallCommandFor, uninstallCommandForBash } from '../constants'
 import type { ProjectSummary } from '../cli/client'
 import { optionsFromDescription, type CliSetting } from '../cli/configParse'
-import { allowedActions, type ExtensionState } from '../state/machine'
+import { mayModifyBinary, type ExtensionState } from '../state/machine'
 
 export interface PanelModel {
   state: ExtensionState
@@ -34,12 +34,11 @@ export interface PanelModel {
   /** Which screen the panel shows. Anything but `main` replaces the whole view. */
   view?: 'main' | 'settings'
   /**
-   * What the pending reload is for, until the window reloads and it takes
-   * effect: a registration the server has not picked up, or a new binary the
-   * running server is not the one from. `true` reads as the registration case,
-   * which is what it meant before there was a second one.
+   * True while a server VS Code already started still runs the binary a newer
+   * install has replaced. Nothing has to be reloaded for the server to exist -
+   * it is provided rather than written - only for it to be the new file.
    */
-  restartRequired?: boolean | 'registration' | 'binary'
+  restartRequired?: boolean | 'binary'
   /** CLI settings from `config list`, shown on the settings screen. */
   cliSettings?: CliSetting[]
   /** Host platform, so the uninstall block offers the right shell. */
@@ -254,19 +253,16 @@ function metrics(projects: ProjectSummary[]): string {
 }
 
 /**
- * The header status reflects MCP registration, not a server process.
+ * The header status reflects whether a server is being offered at all, not
+ * whether one is running.
  *
- * The extension does not own the server lifecycle - the CLI's own `install`
- * subcommand registers it and VS Code starts it - so there is no running or
- * stopped state here to report honestly.
+ * The extension provides the definition; VS Code decides when to start the
+ * process and owns its lifecycle, so there is no running or stopped state here
+ * to report honestly.
  */
 function statusChip(state: ExtensionState): string {
   const [tone, label] =
-    state.kind === 'needs-setup'
-      ? ['idle', 'no binary']
-      : state.kind === 'binary-not-registered'
-        ? ['warn', 'not registered']
-        : ['ok', 'registered']
+    state.kind === 'needs-setup' ? ['idle', 'no binary'] : ['ok', 'registered']
   return `<span class="chip ${tone}"><span class="chip-dot"></span>${escapeHtml(label)}</span>`
 }
 
@@ -643,32 +639,6 @@ function commandLine(label: string, command: string, copyCommand: string): strin
 }
 
 /**
- * The buttons that copy the register command.
- *
- * The Windows spelling starts with the call operator, which PowerShell needs
- * and which Git Bash reads as a background job, so a second button carries the
- * POSIX spelling wherever Git Bash is actually installed. This is the same
- * split the uninstall block makes, for the same reason.
- */
-function copyRegisterButtons(model: PanelModel): string {
-  const powershell = button(
-    'betterCmm.copyInstallCommand',
-    model.platform === 'win32' && model.gitBashAvailable === true
-      ? 'Copy register command (PowerShell)'
-      : 'Copy register command',
-    'copy',
-    'primary',
-  )
-  if (model.platform !== 'win32' || model.gitBashAvailable !== true) {
-    return powershell
-  }
-  return (
-    powershell +
-    button('betterCmm.copyInstallCommandBash', 'Copy register command (Git Bash)', 'copy', 'primary')
-  )
-}
-
-/**
  * The uninstall block, rendered inside the settings screen.
  *
  * The extension deliberately does not run the CLI's own uninstall: it asks
@@ -693,7 +663,7 @@ function uninstallBlock(model: PanelModel): string {
     : commandLine('Terminal', uninstallCommandFor(active, 'linux'), 'betterCmm.copyUninstallCommand')
 
   return (
-    '<p class="lead">Removing the CLI also removes its MCP registration, so no ' +
+    '<p class="lead">Removing the CLI also removes the entries its own install wrote, so no ' +
     'editor keeps pointing at a binary that is gone. Run it yourself in a ' +
     'terminal: it asks whether to delete the indexes it built, and that answer ' +
     'should be yours.</p>' +
@@ -823,7 +793,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
   if (model.view === 'settings') {
     return settingsScreen(model, nonce)
   }
-  const actions = allowedActions(state)
+  const mayUpdate = mayModifyBinary(state)
   const loading = model.loading === true
   const parts: string[] = [header(model), binaryBar(model)]
 
@@ -838,7 +808,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
           '<ul class="steps">' +
           '<li>Installs the binary from ' +
           `<a href="${escapeHtml(upstreamRepoUrl())}">the upstream project</a></li>` +
-          '<li>Registers it as an MCP server</li>' +
+          '<li>Offers it to VS Code as an MCP server, and wires up the other agents the CLI supports</li>' +
           '</ul>' +
           // Setup is the screen a failing install leaves the user on, and the
           // failure names a log the user has no way to find otherwise.
@@ -854,92 +824,18 @@ export function renderBody(model: PanelModel, nonce: string): string {
     parts.push(notice('info', state.notice))
   }
 
-  if (state.pathConflict !== null) {
+  // A server VS Code already started is a process from the file as it was. The
+  // definition itself needs no reload - it is provided, not written.
+  if (model.restartRequired === true || model.restartRequired === 'binary') {
     parts.push(
       notice(
         'warning',
-        `The MCP entry points at ${state.pathConflict.entryPath}, but the active binary is ${state.pathConflict.activePath}.`,
-      ),
-    )
-  }
-
-  // Settings Sync carries mcp.json between machines, and it holds one absolute
-  // path, so the fix and the reason it keeps coming back are said together:
-  // re-registering here is correct for this machine and breaks the other one
-  // until that category stops syncing.
-  if (state.foreignPlatformEntry !== null) {
-    parts.push(
-      notice(
-        'warning',
-        `The MCP entry names ${state.foreignPlatformEntry.entryPath}, a path from another operating system, ` +
-          `so the server cannot start here. This machine's binary is ${state.foreignPlatformEntry.activePath}.`,
-      ),
-      notice(
-        'info',
-        'Settings Sync copied that entry from your other machine. Registering here rewrites it and ' +
-          'breaks the other machine in turn, until you switch "MCP Servers" off under Settings Sync.',
-      ),
-    )
-  }
-
-  if (state.kind === 'binary-not-registered') {
-    parts.push(notice('warning', 'The binary is not registered as an MCP server.'))
-  }
-
-  // Registering only takes effect once the extension host restarts, so saying
-  // it succeeded without saying that would leave the user looking for a server
-  // that is not there yet.
-  if (model.restartRequired === 'binary') {
-    parts.push(
-      notice(
-        'warning',
-        'Reload VS Code to run the new binary - the MCP server is still running the old one.',
-      ),
-    )
-  } else if (model.restartRequired === true || model.restartRequired === 'registration') {
-    parts.push(
-      notice(
-        'warning',
-        'Reload VS Code to finish registering the MCP server - it is not reachable until then.',
+        'Restart the MCP server to run the new binary - the running one started from the old file.',
       ),
     )
   }
 
   const buttons: string[] = []
-  if (actions.showInstallButton) {
-    buttons.push(button('betterCmm.installCli', 'Register MCP server', 'link', 'primary'))
-  }
-  // The entry is present, so `showInstallButton` is off - but it names a binary
-  // this installation is not running, from another machine or from this one,
-  // and rewriting it is the fix in both cases. Nothing is written without the
-  // click: an entry pointing elsewhere can be deliberate. Reuses the register
-  // command rather than adding a second one.
-  if ((state.foreignPlatformEntry !== null || state.pathConflict !== null) && !actions.showInstallButton) {
-    buttons.push(
-      actions.mayWriteMcpConfig
-        ? button(
-            'betterCmm.installCli',
-            // "on this machine" answers the other machine's path; it says
-            // nothing about an entry that names a second binary on this one.
-            state.foreignPlatformEntry !== null
-              ? 'Register on this machine'
-              : 'Register the active binary',
-            'link',
-            'primary',
-          )
-        : copyRegisterButtons(model),
-    )
-  }
-  if (actions.showClipboardHint) {
-    parts.push(
-      notice(
-        'info',
-        'This binary is not managed by the extension, so the extension does not modify it. ' +
-          'Run the register command yourself to finish setup.',
-      ),
-    )
-    buttons.push(copyRegisterButtons(model))
-  }
   // The update pair carries the warning colour, not the call-to-action green:
   // running an outdated engine is the problem being reported, and a button in
   // the same colour as every other action is one nobody notices. The release
@@ -949,7 +845,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
     // An external binary gets the news and the notes, but no button: the
     // extension never writes into an installation it does not own.
     updateActions.push(
-      actions.showUpdateButton
+      mayUpdate
         ? updateButton(model.updateAvailable, model.updateProgress ?? null)
         : updateHint(model.updateAvailable),
     )

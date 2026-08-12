@@ -45,8 +45,6 @@ function modelWith(updateAvailable: string | null): PanelModel {
       activePath: null,
       effectiveSource: 'managed',
       notice: null,
-      pathConflict: null,
-      foreignPlatformEntry: null,
     },
     projects: [],
     version: '1.0.0',

@@ -87,8 +87,6 @@ describe('packaged contents', () => {
             activePath: '/bin/codebase-memory-mcp',
             effectiveSource: 'managed',
             notice: null,
-            pathConflict: null,
-            foreignPlatformEntry: null,
           },
           projects: [],
           version: null,

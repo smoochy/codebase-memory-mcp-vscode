@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.14]
+
+- VS Code now gets the MCP server from a definition provider rather than from `mcp.json`. The server is offered in memory for whichever binary is active and disappears with the window, so nothing about it is written to disk and nothing about it can reach Settings Sync.
+- That removes the ping-pong between two synced machines outright. `mcp.json` is synced and holds one absolute command path, so a Windows machine and a Mac kept rewriting the entry for each other and each broke the other's server; a provided server has no path to sync.
+- The CLI's own `install` detects VS Code as an agent and writes an entry anyway, so the extension removes that one key again after every `install` it runs, leaving every other server in the file untouched. It is a stopgap, removable once the CLI can be told to skip an agent.
+- `engines.vscode` rises to `^1.101.0`, the release that finalised the provider API. Keeping the file write alive for older hosts would mean two registration paths and the whole foreign-entry branch surviving forever, and the extension has no published users to preserve.
+- Gone with the file entry: the `betterCmm.autoReregisterMcpEntry` setting, the path-conflict and foreign-platform warnings, the "Register MCP server" button and the register-command clipboard buttons. There is no longer a state in which a resolved binary is not registered.
+- Changing the active binary no longer asks for a window reload. The provided definition carries the CLI's version, so a switch or an update makes VS Code offer to refresh the tools instead.
+
 ## [0.9.13]
 
 - The panel now reads the MCP registration of the VS Code instance it is running in. It located `mcp.json` from the home directory before, which named the default installation's file whatever `--user-data-dir` the instance was started with, so a second installation was told about a registration that was not its own.

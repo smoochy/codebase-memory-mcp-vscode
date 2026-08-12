@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import type { CliSetting } from '../cli/configParse'
-import { allowedActions } from '../state/machine'
+import { mayModifyBinary } from '../state/machine'
 import { contentSecurityPolicy, renderBody, PANEL_CSS, type PanelModel } from './html'
 
 function makeNonce(): string {
@@ -179,8 +179,6 @@ export class PanelProvider implements vscode.WebviewViewProvider {
         activePath: null,
         effectiveSource: 'managed',
         notice: null,
-        pathConflict: null,
-        foreignPlatformEntry: null,
       },
       projects: [],
       version: null,
@@ -212,7 +210,7 @@ export class PanelProvider implements vscode.WebviewViewProvider {
     if (model.updateAvailable === null) {
       return undefined
     }
-    const own = allowedActions(model.state).showUpdateButton
+    const own = mayModifyBinary(model.state)
     return {
       value: 1,
       tooltip:

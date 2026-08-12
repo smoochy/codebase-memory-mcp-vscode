@@ -18,7 +18,6 @@ export const MAX_REDIRECTS = 5
 /** Keys `codebase-memory-mcp install` may use for its MCP server entry. */
 export const MCP_SERVER_KEYS: readonly string[] = ['codebase-memory-mcp', 'codebase-memory']
 
-export const INSTALL_COMMAND = 'codebase-memory-mcp install'
 export const UNINSTALL_COMMAND = 'codebase-memory-mcp uninstall'
 
 /**
@@ -51,14 +50,6 @@ export function uninstallCommandFor(
   return commandFor(binaryPath, 'uninstall', UNINSTALL_COMMAND, platform)
 }
 
-/** The register command bound to the same binary, for the same reason. */
-export function installCommandFor(
-  binaryPath: string | null,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  return commandFor(binaryPath, 'install', INSTALL_COMMAND, platform)
-}
-
 function commandFor(
   binaryPath: string | null,
   subcommand: string,
@@ -87,12 +78,4 @@ export function uninstallCommandForBash(binaryPath: string | null): string {
     return UNINSTALL_COMMAND
   }
   return `"${binaryPath.replace(/\\/g, '/')}" uninstall`
-}
-
-/** The register command for a POSIX shell running on Windows. See above. */
-export function installCommandForBash(binaryPath: string | null): string {
-  if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
-    return INSTALL_COMMAND
-  }
-  return `"${binaryPath.replace(/\\/g, '/')}" install`
 }

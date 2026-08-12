@@ -2,11 +2,8 @@ import * as assert from 'node:assert/strict'
 import {
   ALLOWED_HOSTS,
   BINARY_BASE,
-  INSTALL_COMMAND,
   UNINSTALL_COMMAND,
   UPSTREAM,
-  installCommandFor,
-  installCommandForBash,
   uninstallCommandFor,
 } from '../../src/constants'
 
@@ -64,22 +61,6 @@ describe('constants', () => {
 
     it('falls back when no binary resolved at all', () => {
       assert.equal(uninstallCommandFor(null, 'linux'), UNINSTALL_COMMAND)
-    })
-  })
-
-  // The button exists for an install the extension does not own, which is the
-  // one it can least assume is on PATH.
-  describe('installCommandFor', () => {
-    it('binds the register command to the resolved binary', () => {
-      assert.equal(installCommandFor('C:\\Users\\me\\cmm.exe', 'win32'), '& "C:\\Users\\me\\cmm.exe" install')
-      assert.equal(installCommandFor('/opt/Program Files/cmm', 'linux'), '"/opt/Program Files/cmm" install')
-      assert.equal(installCommandForBash('C:\\Users\\me\\cmm.exe'), '"C:/Users/me/cmm.exe" install')
-    })
-
-    it('falls back to the bare command for a path that could close the quote', () => {
-      assert.equal(installCommandFor('/tmp/a"; id; "b', 'linux'), INSTALL_COMMAND)
-      assert.equal(installCommandForBash('/tmp/$(id)'), INSTALL_COMMAND)
-      assert.equal(installCommandFor(null, 'win32'), INSTALL_COMMAND)
     })
   })
 })
