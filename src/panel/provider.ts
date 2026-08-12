@@ -97,8 +97,27 @@ export class PanelProvider implements vscode.WebviewViewProvider {
       setupProgress: this.setupProgress,
     }
     this.render()
-    // Reported rather than written here: the badge belongs to a view that
-    // exists before the panel has ever been opened, which this one does not.
+    this.reportBadge(model)
+  }
+
+  /**
+   * Patch the update offer alone, without a model the caller does not have.
+   *
+   * The refresh loop only runs while the panel is on screen, so the hidden
+   * window's update check has nothing but this one field to report.
+   */
+  setUpdateAvailable(updateAvailable: string | null): void {
+    if (this.model === undefined || this.model.updateAvailable === updateAvailable) {
+      return
+    }
+    this.model = { ...this.model, updateAvailable }
+    this.render()
+    this.reportBadge(this.model)
+  }
+
+  // Reported rather than written here: the badge belongs to a view that
+  // exists before the panel has ever been opened, which this one does not.
+  private reportBadge(model: PanelModel): void {
     const badge = this.badgeFor(model)
     if (badge?.tooltip !== this.badgeReported?.tooltip) {
       this.badgeReported = badge

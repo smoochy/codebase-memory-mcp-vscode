@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict'
 import {
+  createLatestTagCache,
   downloadVerified,
   followRedirects,
   withRetry,
@@ -368,5 +369,66 @@ describe('downloadVerified', () => {
     )
     assert.equal(new TextDecoder().decode(bytes), 'abc')
     assert.deepEqual(seen, [])
+  })
+})
+
+describe('createLatestTagCache', () => {
+  /** Answers every release lookup with `tag`, counting how often it was asked. */
+  const tagFetch = (tags: string[], calls: { n: number }): FetchLike =>
+    async () => {
+      const tag = tags[Math.min(calls.n, tags.length - 1)] ?? 'v1.0.0'
+      calls.n += 1
+      return new Response(null, {
+        status: 302,
+        headers: { location: `https://github.com/o/r/releases/tag/${tag}` },
+      })
+    }
+
+  it('holds the answer until the TTL expires, then looks it up again', async () => {
+    const calls = { n: 0 }
+    let now = 1_000
+    const cache = createLatestTagCache(tagFetch(['v1.0.0', 'v1.1.0'], calls), 60_000, () => now)
+
+    assert.equal(await cache.get(), 'v1.0.0')
+    now += 59_000
+    assert.equal(await cache.get(), 'v1.0.0')
+    assert.equal(calls.n, 1, 'a fresh answer must not go back to the network')
+
+    now += 2_000
+    assert.equal(await cache.get(), 'v1.1.0', 'a stale answer must be looked up again')
+    assert.equal(calls.n, 2)
+  })
+
+  it('keeps the last answer when a lookup fails', async () => {
+    const calls = { n: 0 }
+    let now = 0
+    const cache = createLatestTagCache(
+      async (url, init) => {
+        if (calls.n > 0) {
+          calls.n += 1
+          throw new Error('offline')
+        }
+        return tagFetch(['v1.0.0'], calls)(url, init)
+      },
+      10,
+      () => now,
+    )
+
+    assert.equal(await cache.get(), 'v1.0.0')
+    now += 100
+    await assert.rejects(cache.get(), /offline/)
+    now += 100
+    await assert.rejects(cache.get(), /offline/)
+  })
+
+  it('takes a tag resolved elsewhere as the current answer', async () => {
+    const calls = { n: 0 }
+    let now = 0
+    const cache = createLatestTagCache(tagFetch(['v1.0.0'], calls), 60_000, () => now)
+
+    cache.set('v2.0.0')
+    now += 59_000
+    assert.equal(await cache.get(), 'v2.0.0')
+    assert.equal(calls.n, 0, 'an update just installed must not be offered again')
   })
 })

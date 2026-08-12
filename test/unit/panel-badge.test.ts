@@ -98,6 +98,27 @@ describe('activity bar badge', () => {
     assert.equal((seen[seen.length - 1] as { value: number } | undefined)?.value, 1)
   })
 
+  // The refresh loop is skipped while the panel is hidden, so this is the only
+  // route a release found in a long-running window has to the activity bar.
+  it('badges an update reported without a full model', () => {
+    const { p } = provider()
+    const seen = reported(p)
+    p.update(modelWith(null))
+    p.setUpdateAvailable('1.1.0')
+    assert.equal((seen[seen.length - 1] as { value: number } | undefined)?.value, 1)
+  })
+
+  it('ignores an update report before the first refresh', () => {
+    const p = new PanelProvider({} as never, () => undefined, '0.9.7')
+    const seen = reported(p)
+    p.setUpdateAvailable('1.1.0')
+    assert.deepEqual(
+      seen.filter((w) => w !== undefined),
+      [],
+      'without a model there is no state to badge against',
+    )
+  })
+
   it('clears the badge once the update is gone, and reports each change once', () => {
     const { p } = provider()
     const seen = reported(p)
