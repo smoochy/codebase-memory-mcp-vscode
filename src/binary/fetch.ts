@@ -131,6 +131,46 @@ export async function resolveLatestTag(fetchImpl: FetchLike): Promise<string> {
   return tag
 }
 
+/** How long a resolved release tag stays good before the lookup runs again. */
+export const LATEST_TAG_TTL_MS = 6 * 60 * 60 * 1000
+
+export interface LatestTagCache {
+  /** Resolves the tag when the cached answer is missing or older than the TTL. */
+  get(): Promise<string>
+  /** Record a tag resolved elsewhere, so the next `get` does not undo it. */
+  set(tag: string): void
+}
+
+/**
+ * A release lookup that repeats itself once its answer goes stale.
+ *
+ * A window can run for days, so a tag held for the whole session reports "up
+ * to date" forever. A failed lookup throws and leaves the previous answer in
+ * place: a stale tag beats no tag, and the caller decides what to log.
+ */
+export function createLatestTagCache(
+  fetchImpl: FetchLike,
+  ttlMs: number = LATEST_TAG_TTL_MS,
+  now: () => number = Date.now,
+): LatestTagCache {
+  let tag: string | null = null
+  let resolvedAt = 0
+  return {
+    async get(): Promise<string> {
+      if (tag !== null && now() - resolvedAt < ttlMs) {
+        return tag
+      }
+      tag = await resolveLatestTag(fetchImpl)
+      resolvedAt = now()
+      return tag
+    },
+    set(value: string): void {
+      tag = value
+      resolvedAt = now()
+    },
+  }
+}
+
 /**
  * Read the body chunk by chunk, reporting how much has arrived.
  *

@@ -19,7 +19,7 @@ import { computeState, samePath, updateOffer, type BinarySource, type ExtensionS
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { resolveLatestTag, withRetry } from './binary/fetch'
+import { createLatestTagCache, resolveLatestTag, withRetry } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
 
@@ -366,23 +366,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   }
 
   /**
-   * Latest tag seen on GitHub, cached for the whole session.
+   * Latest tag seen on GitHub, cached until it goes stale.
    *
    * `refresh` runs on a timer, so the release lookup must not go out on every
-   * tick. Once per session is enough to surface an update; the user gets the
-   * current answer either way when they run the update command, which resolves
-   * the tag itself rather than reading this cache.
+   * tick; the user gets the current answer either way when they run the update
+   * command, which resolves the tag itself rather than reading this cache.
    */
-  let latestTagCache: string | null = null
+  const latestTagCache = createLatestTagCache(fetchImpl)
 
   /** Remote lookup failures leave the panel without update info, never break the refresh. */
   const cachedLatestTag = async (): Promise<string | null> => {
-    if (latestTagCache !== null) {
-      return latestTagCache
-    }
     try {
-      latestTagCache = await resolveLatestTag(fetchImpl)
-      return latestTagCache
+      return await latestTagCache.get()
     } catch (cause) {
       log(`update check failed: ${cause instanceof Error ? cause.message : String(cause)}`)
       return null
@@ -418,6 +413,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // worth one line, not one line per poll. Reset when the offer goes away, so
   // an update taken and a later one found are two separate records.
   let updateLogged = false
+
+  // The installed CLI version as of the last refresh. Reading it costs a
+  // process launch, so the badge check that runs with the panel hidden asks
+  // this instead: the binary cannot change while nobody is looking at the
+  // panel, because installing one goes through it.
+  let lastKnownVersion: string | null = null
 
   /**
    * The server VS Code is currently being offered, if any.
@@ -558,6 +559,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
       const installed = await client.version()
       version = installed.ok ? installed.value : null
+      lastKnownVersion = version
 
       // Skip the release lookup entirely when the answer cannot matter. An
       // external binary is looked up too: the extension will not update it,
@@ -601,6 +603,31 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       absoluteTime: setting('absoluteTimestamps', false),
       dateLocale: setting('dateLocale', ''),
     })
+  }
+
+  /**
+   * The update half of `refresh`, for ticks where the panel is hidden.
+   *
+   * Nothing here launches a process: the installed version is the one the last
+   * refresh read, and the release tag comes from its cache. A window that is
+   * never opened still learns about a release this way, which is the whole
+   * reason the badge lives on a view of its own.
+   */
+  const updateBadgeCheck = async (): Promise<void> => {
+    const checkForUpdates = setting('checkForUpdates', true)
+    if (!checkForUpdates || lastKnownVersion === null) {
+      return
+    }
+    const updateAvailable = updateOffer({
+      installedVersion: lastKnownVersion,
+      latestTag: await cachedLatestTag(),
+      checkForUpdates,
+    })
+    if (updateAvailable !== null && !updateLogged) {
+      updateLogged = true
+      debug(`update available: ${updateAvailable} (installed ${lastKnownVersion})`)
+    }
+    panel.setUpdateAvailable(updateAvailable)
   }
 
   /**
@@ -969,7 +996,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         restartRequired = 'binary'
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
-        latestTagCache = latestTag
+        latestTagCache.set(latestTag)
         await refresh()
         // The button is gone with the offer; drop the percentage so the next
         // update does not start from the last one's 100.
@@ -1421,6 +1448,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       refreshTimer = setInterval(() => {
         if (panel.isVisible && !panel.isOnSubScreen) {
           void refresh()
+        } else {
+          // Deliberately not a full refresh: the CLI calls and their log lines
+          // stop while the panel is hidden. The release lookup is a cached
+          // network call, and it is the only way an update lands on the
+          // activity bar in a window whose panel is never opened.
+          void updateBadgeCheck()
         }
       }, seconds * 1000)
     }

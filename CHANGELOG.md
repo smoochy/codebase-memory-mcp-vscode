@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.16]
+
+- The activity-bar update badge now appears in a window that was already running when a release landed. The release lookup used to be resolved once and held for the whole session, so a window open for days kept reporting the answer it got at activation; it is now looked up again once the answer is more than six hours old.
+- The refresh timer no longer does nothing at all while the panel is hidden. It runs the update check on those ticks, which costs one cached network lookup and launches no process, so the panel's CLI polling and its log lines still stop when nobody is looking at it.
+
 ## [0.9.15]
 
 - Every request the extension makes now survives a transient failure. github.com refuses individual HTTP/2 streams under load, which arrives as a bare `fetch failed` and clears on the next attempt, and a single one of those used to end the whole Setup run.
