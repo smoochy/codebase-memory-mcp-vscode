@@ -63,6 +63,24 @@ function finiteOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/**
+ * Whatever on stderr could be the reason a run failed, with the CLI's routine
+ * logging dropped.
+ *
+ * The CLI writes `level=info msg=mem.init ...` to stderr on every run, a
+ * successful one included, so treating "stderr is non-empty" as the cause
+ * quoted that line back as the explanation for an exit code it has nothing to
+ * do with - a symptom and no cause. Only `warn` and `error` lines, and any
+ * output that is not logfmt at all, can carry a reason.
+ */
+export function stderrCause(stderr: string): string {
+  return stderr
+    .split('\n')
+    .filter((line) => !/^level=(?:info|debug|trace)\b/.test(line.trim()))
+    .join('\n')
+    .trim()
+}
+
 /** Thin wrapper around the CLI. All calls are read-only except add and remove. */
 export class CliClient {
   constructor(
@@ -88,7 +106,7 @@ export class CliClient {
 
     // No usable JSON came back, so fall back to whatever the process reported.
     if (output.code !== 0) {
-      const detail = output.stderr.trim() || parsed.error
+      const detail = stderrCause(output.stderr) || output.stdout.trim() || parsed.error
       return { ok: false, error: `CLI exited with ${String(output.code)}: ${detail}` }
     }
     return parsed

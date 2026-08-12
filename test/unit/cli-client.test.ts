@@ -181,6 +181,32 @@ describe('CliClient', () => {
     assert.match(result.ok ? '' : result.error, /CLI exited with 1: boom/)
   })
 
+  it('does not quote the CLI\'s routine info logging as the cause of a failure', async () => {
+    const stderr = 'level=info msg=mem.init budget_mb=32538 total_ram_mb=65077'
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.doesNotMatch(result.ok ? '' : result.error, /mem\.init/)
+    assert.match(result.ok ? '' : result.error, /CLI exited with 1:/)
+  })
+
+  it('keeps a real stderr error that arrives beside the routine info logging', async () => {
+    const stderr = 'level=info msg=mem.init budget_mb=32538\nlevel=error msg=store locked'
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /store locked/)
+    assert.doesNotMatch(result.ok ? '' : result.error, /mem\.init/)
+  })
+
+  it('falls back to stdout when the only stderr is routine logging', async () => {
+    const stderr = 'level=info msg=mem.init budget_mb=32538'
+    const client = new CliClient(BIN, stubRunner({ stdout: 'panic: nil map', stderr, code: 2 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /panic: nil map/)
+  })
+
   it('surfaces a runner rejection as a failed result rather than throwing', async () => {
     const failing: Runner = async () => {
       throw new Error('ENOENT')
