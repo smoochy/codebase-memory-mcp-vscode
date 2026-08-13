@@ -76,15 +76,19 @@ jobs:
             exit 1
           fi
 
-      # Create-or-reuse plus --clobber, so re-running the same tag after a
-      # half-finished publish updates the release instead of failing on it.
+      # A release is immutable the moment it exists, so the asset has to go up
+      # in the same call that creates it - there is no second chance to attach
+      # or clobber one. Re-running the same tag is still safe: a release that
+      # already carries its asset is left exactly as it is.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
-          gh release upload "$GITHUB_REF_NAME" ./*.vsix --clobber
+          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '\.vsix$'; then
+            echo "release $GITHUB_REF_NAME already carries its asset"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md ./*.vsix
+          fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
