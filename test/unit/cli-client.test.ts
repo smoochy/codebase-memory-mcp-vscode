@@ -14,6 +14,17 @@ function stubRunner(
 
 const BIN = 'C:/bin/cmm.exe'
 
+/**
+ * What CLI 0.10.3 writes to stderr on every `cli` subcommand, a successful run
+ * included. The first line is a `warn`, which is why severity alone cannot
+ * decide what caused a failure.
+ */
+const ROUTINE_010_3_STDERR =
+  'level=warn msg=mem.allocator.preloading_completed still_preloading=false ' +
+  'detail=allocator_was_still_preloading,_so_arena_creation_and_purging_were_disabled\n' +
+  'level=info msg=mem.allocator.owned classes=all\n' +
+  'level=info msg=mem.init budget_mb=32538 total_ram_mb=65077 source=ram_fraction'
+
 describe('CliClient', () => {
   it('parses the project list past the log preamble', async () => {
     const stdout =
@@ -263,11 +274,37 @@ describe('CliClient', () => {
   })
 
   it('falls back to stdout when the only stderr is routine logging', async () => {
-    const stderr = 'level=info msg=mem.init budget_mb=32538'
-    const client = new CliClient(BIN, stubRunner({ stdout: 'panic: nil map', stderr, code: 2 }))
+    const client = new CliClient(
+      BIN,
+      stubRunner({ stdout: 'panic: nil map', stderr: ROUTINE_010_3_STDERR, code: 2 }),
+    )
     const result = await client.listProjects()
     assert.equal(result.ok, false)
-    assert.match(result.ok ? '' : result.error, /panic: nil map/)
+    const error = result.ok ? '' : result.error
+    // The command's own channel outranks the routine allocator warning 0.10.3
+    // opens every run with, which is kept below it rather than dropped.
+    assert.match(error, /CLI exited with 2: panic: nil map/)
+    assert.match(error, /Log: level=warn msg=mem\.allocator\.preloading_completed/)
+  })
+
+  it('does not quote the routine allocator warning as the cause of a failure', async () => {
+    const client = new CliClient(
+      BIN,
+      stubRunner({ stdout: '', stderr: ROUTINE_010_3_STDERR, code: 1 }),
+    )
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    const error = result.ok ? '' : result.error
+    assert.match(error, /^CLI exited with 1: /)
+    assert.doesNotMatch(error, /mem\.init/)
+  })
+
+  it('keeps a warn line as the detail when nothing outranks it', async () => {
+    const stderr = `${ROUTINE_010_3_STDERR}\nlevel=warn msg=store locked by another process`
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /store locked by another process/)
   })
 
   it('surfaces a runner rejection as a failed result rather than throwing', async () => {
