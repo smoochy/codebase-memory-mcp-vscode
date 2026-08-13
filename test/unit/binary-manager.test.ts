@@ -17,7 +17,7 @@ const PLATFORM: NodeJS.Platform = 'linux'
 const ARCH = 'x64'
 const TAG = 'v1.2.3'
 const STORAGE = '/storage'
-const ASSET = assetName({ platform: PLATFORM, arch: ARCH }, 'standard')
+const ASSET = assetName({ platform: PLATFORM, arch: ARCH })
 const ARCHIVE_BYTES = new TextEncoder().encode('fake-archive-contents')
 const GOOD_CHECKSUMS = `${sha256(ARCHIVE_BYTES)}  ${ASSET}`
 

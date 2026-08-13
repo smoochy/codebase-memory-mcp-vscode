@@ -52,11 +52,6 @@ export interface ProjectSummary {
   changed_count?: number
 }
 
-export interface IndexStatus {
-  indexing: boolean
-  progress?: number
-}
-
 const DEFAULT_TIMEOUT_MS = 30_000
 
 /**
@@ -167,10 +162,6 @@ export class CliClient {
     }
   }
 
-  async indexStatus(project: string): Promise<CliResult<IndexStatus>> {
-    return this.json<IndexStatus>(['cli', 'index_status', `--project=${project}`, '--json'])
-  }
-
   async addProject(path: string): Promise<CliResult<unknown>> {
     // `--repo-path`, not `--path`: the tool's parameter is `repo_path`, and an
     // unknown flag is ignored rather than rejected, so `--path` silently made
@@ -192,7 +183,10 @@ export class CliClient {
     try {
       const output = await this.run(this.binaryPath, ['config', ...args], this.timeoutMs)
       if (output.code !== 0) {
-        return { ok: false, error: output.stderr.trim() || `config exited with ${String(output.code)}` }
+        return {
+          ok: false,
+          error: stderrCause(output.stderr) || `config exited with ${String(output.code)}`,
+        }
       }
       return { ok: true, value: output.stdout }
     } catch (cause) {

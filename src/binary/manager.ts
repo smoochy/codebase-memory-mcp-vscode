@@ -1,4 +1,4 @@
-import { assetName, binaryFileName, checksumsUrl, downloadUrl, type Variant } from './assets'
+import { assetName, binaryFileName, checksumsUrl, downloadUrl } from './assets'
 import { downloadVerified, followRedirects, resolveLatestTag, type FetchLike } from './fetch'
 import { extractCommand, replaceBinary, tarCommand, type FileOps } from './install'
 import type { Runner } from '../cli/client'
@@ -46,7 +46,6 @@ export interface InstallDeps {
   installPath: string
   /** SystemRoot on Windows, so bsdtar can be named in full. Unused elsewhere. */
   systemRoot?: string
-  variant?: Variant
   /** Progress log sink. Callers redact before forwarding to a channel. */
   log?: (message: string) => void
   /** Reports the wizard step id currently in progress. Callers resolve it to a title. */
@@ -130,7 +129,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<In
   const step = deps.onStep ?? ((): void => {})
   const log = deps.log ?? ((): void => {})
 
-  const asset = assetName({ platform, arch }, deps.variant ?? 'standard')
+  const asset = assetName({ platform, arch })
 
   step('download-binary')
   // Fetch the published digests first. An unreachable, empty or malformed
