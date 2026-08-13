@@ -122,11 +122,20 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          # The query fails outright until the extension exists at all, which is
-          # exactly the state the very first release runs in. That is a "not
-          # published" answer, not an error.
-          npx --yes @vscode/vsce@3.9.2 show smoochy.better-codebase-memory-mcp --json > listing.json || echo '{}' > listing.json
-          published="$(node -e 'const v=require("./listing.json").versions||[];console.log(v.some(x=>x.version===process.env.VERSION)?"yes":"no")')"
+          # Until the extension exists at all - the state the very first release
+          # runs in - the query exits 0 and prints the word "undefined", so its
+          # exit code answers nothing and the output has to be parsed instead.
+          # Anything that is not a listing carrying this exact version counts as
+          # not published, which errs toward attempting the upload: a genuinely
+          # duplicate version is refused loudly by the marketplace, while a
+          # skip on a bad parse would report a release that never happened.
+          npx --yes @vscode/vsce@3.9.2 show smoochy.better-codebase-memory-mcp --json > listing.json || true
+          published="$(node -e '
+            const fs = require("fs");
+            let versions = [];
+            try { versions = JSON.parse(fs.readFileSync("./listing.json", "utf8")).versions || []; } catch {}
+            console.log(versions.some(x => x.version === process.env.VERSION) ? "yes" : "no");
+          ')"
           if [ "$published" = "yes" ]; then
             echo "$VERSION is already on the VS Code Marketplace, skipping"
           else
