@@ -1,9 +1,11 @@
 # Changelog
 
-## [1.0.1]
+## [1.0.2]
 
-- First published release, on the VS Code Marketplace and on Open VSX. Nothing about the extension changes here: this is the version that ships rather than a version that adds anything, and everything it does arrived over the 0.9.x line below. It is 1.0.1 rather than 1.0.0 for a reason outside the extension - the first release run attached no asset, because GitHub makes a release immutable the moment it exists and the workflow uploaded the `.vsix` in a second step. Deleting that empty release reserves its tag permanently, so `v1.0.0` cannot be created again.
+- First published release, on the VS Code Marketplace and on Open VSX. Nothing about the extension changes here: this is the version that ships rather than a version that adds anything, and everything it does arrived over the 0.9.x line below.
 - The `allowScripts` entry for esbuild named a version the lockfile no longer resolved, so npm blocked the install script it exists to allow. It now names the resolved version.
+
+The version is 1.0.2 because the two before it were spent on the release pipeline rather than on the extension, and neither reached a marketplace. GitHub makes a release immutable the moment it exists, so `v1.0.0` produced a release the workflow could not attach its `.vsix` to; deleting that release reserves its tag for good, and the reservation outlives even turning the setting off. `v1.0.1` then failed in the publish step, where the guard that skips an already-published version keyed on the exit code of a query that exits 0 while printing `undefined`.
 
 ## [0.9.21]
 
