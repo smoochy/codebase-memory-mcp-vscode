@@ -55,6 +55,8 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important |
 | 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking |
 | 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking |
+| 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking |
+| 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
 | 13 | Clipboard | Run the copy-uninstall commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 

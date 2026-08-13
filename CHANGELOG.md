@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.17]
+
+- Taking an update now retires the engine the replaced binary left running. CLI 0.10.0 starts a per-user daemon on its first call and keeps it alive across sessions, and that daemon refuses clients of any other build, so from the moment the new binary was in place every call failed and reloading the window changed nothing - the daemon is a separate process that survives it.
+- When that stop does not work, the panel says so and names `codebase-memory-mcp daemon stop`, rather than reporting a finished update over an engine that answers nothing. The notice clears itself as soon as a call gets through.
+- The branch tag is back on the project cards against CLI 0.10.x, which moved the branch out of the `git` object into a flat field. Both shapes are read, so a binary of either generation reports its branch.
+- A project whose checkout has moved since it was indexed is reported as outdated again. CLI 0.10.x reports no commit at all, so the commit now comes from VS Code's own git extension instead of from the CLI.
+
 ## [0.9.16]
 
 - The activity-bar update badge now appears in a window that was already running when a release landed. The release lookup used to be resolved once and held for the whole session, so a window open for days kept reporting the answer it got at activation; it is now looked up again once the answer is more than six hours old.

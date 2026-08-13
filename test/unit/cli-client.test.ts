@@ -23,8 +23,44 @@ describe('CliClient', () => {
     const result = await client.listProjects()
     assert.equal(result.ok, true)
     assert.deepEqual(result.ok ? result.value : null, [
-      { name: 'a', root_path: 'D:/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+      {
+        name: 'a',
+        root_path: 'D:/a',
+        branch: null,
+        nodes: undefined,
+        edges: undefined,
+        size_bytes: undefined,
+      },
     ])
+  })
+
+  // The branch moved out of a `git` object and became a flat field in CLI
+  // 0.10.0, and the extension has no say in which binary it talks to: an
+  // external path can name either. Reading only one shape lost the branch tag
+  // without an error anywhere, which is the failure these cover.
+  for (const [label, entry, expected] of [
+    ['the flat 0.10.x field', '"branch":"main"', 'main'],
+    ['the nested 0.9.x object', '"git":{"branch":"main"}', 'main'],
+    ['neither shape', '"nodes":1', null],
+    ['a null flat branch, on a detached head', '"branch":null', null],
+    ['a null nested branch', '"git":{"branch":null}', null],
+    ['an empty branch string', '"branch":""', null],
+    ['a non-string branch', '"branch":7', null],
+  ] as const) {
+    it(`reads the branch from ${label}`, async () => {
+      const stdout = `{"projects":[{"name":"a","root_path":"D:/a",${entry}}]}`
+      const result = await new CliClient(BIN, stubRunner({ stdout })).listProjects()
+      assert.equal(result.ok && result.value[0]?.branch, expected)
+    })
+  }
+
+  // Both shapes present at once is not a payload any measured binary produces.
+  // It is here so the preference is stated rather than incidental: the flat
+  // field is the current one.
+  it('prefers the flat branch when a payload carries both', async () => {
+    const stdout = '{"projects":[{"name":"a","root_path":"D:/a","branch":"new","git":{"branch":"old"}}]}'
+    const result = await new CliClient(BIN, stubRunner({ stdout })).listProjects()
+    assert.equal(result.ok && result.value[0]?.branch, 'new')
   })
 
   // Each of these reached the panel and threw there before listProjects
@@ -56,7 +92,14 @@ describe('CliClient', () => {
     const result = await client.listProjects()
     assert.ok(result.ok)
     assert.deepEqual(result.value, [
-      { name: 'a', root_path: '/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+      {
+        name: 'a',
+        root_path: '/a',
+        branch: null,
+        nodes: undefined,
+        edges: undefined,
+        size_bytes: undefined,
+      },
     ])
   })
 

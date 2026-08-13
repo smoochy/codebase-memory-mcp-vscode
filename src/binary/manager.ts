@@ -63,6 +63,26 @@ export interface InstallDeps {
 
 const EXTRACT_TIMEOUT_MS = 120_000
 
+/**
+ * Stopping the daemon is a local socket round trip; measured, it returns in
+ * well under a second whether one is running or not.
+ */
+const DAEMON_STOP_TIMEOUT_MS = 30_000
+
+/** Where an install ended up, and whether the old daemon was retired with it. */
+export interface InstallResult {
+  /** Absolute path of the installed binary. */
+  path: string
+  /**
+   * Why the surviving daemon could not be stopped, or undefined when it was.
+   *
+   * Not a failure of the install: the binary is in place either way. It is the
+   * difference between an update that works on the next call and one where
+   * every call fails until the user retires the daemon by hand.
+   */
+  daemonStopError?: string
+}
+
 /** Share of the progress scale the download owns; the rest is extract plus move. */
 const DOWNLOAD_SHARE = 90
 
@@ -105,7 +125,7 @@ function findExtractedBinary(dir: string, platform: NodeJS.Platform, ops: Instal
  * check: a checksums file that cannot be fetched, or that lists no entry for
  * this asset, propagates as a rejection before any write happens.
  */
-export async function installRelease(tag: string, deps: InstallDeps): Promise<string> {
+export async function installRelease(tag: string, deps: InstallDeps): Promise<InstallResult> {
   const { fetchImpl, run, ops, platform, arch, storageDir } = deps
   const step = deps.onStep ?? ((): void => {})
   const log = deps.log ?? ((): void => {})
@@ -173,7 +193,7 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
     replaceBinary(target, ops.read(extracted), platform, ops)
     progress?.(100)
     log(`installed ${tag} at ${target}`)
-    return target
+    return { path: target, daemonStopError: await stopDaemon(target, run, log) }
   } finally {
     // Best effort on both the success and the failure path: a leftover archive
     // is only wasted space, and a failure to clean it must not mask the cause.
@@ -190,11 +210,50 @@ export async function installRelease(tag: string, deps: InstallDeps): Promise<st
   }
 }
 
-/** Resolve the latest tag and install it. Returns the tag and the target path. */
+/**
+ * Retire the daemon left over from the binary that was just replaced.
+ *
+ * From 0.10.0 the CLI starts a per-user daemon on its first call and calls it
+ * permanent: it outlives the session, so replacing the binary underneath it
+ * leaves it running at the old version. It then refuses every client of a
+ * different build outright - measured, a 0.10.3 client against a running
+ * 0.10.2 daemon exits 1 with "a conflicting CBM process is active" - so
+ * without this every CLI call fails after an update, and reloading the window
+ * does not help, the daemon being a separate surviving process.
+ *
+ * The newly installed binary is what runs the stop, and it stops a daemon of
+ * another version fine. Measured against 0.10.2 and 0.10.3, `daemon stop` is
+ * forgiving to the point that no non-zero exit could be produced: absent, and
+ * stale after the recorded process was killed, both report "nothing to stop"
+ * and exit 0. The non-zero branch is therefore the ordinary exit-code check
+ * this file already makes on extraction, not a case that has been observed;
+ * what is reachable is a spawn failure, which throws.
+ *
+ * A 0.9.x binary has no `daemon` subcommand and no daemon to stop, so its
+ * non-zero exit is reported for the same reason as any other: the install
+ * still succeeded, and the message says only that the stop did not happen.
+ */
+async function stopDaemon(
+  target: string,
+  run: Runner,
+  log: (message: string) => void,
+): Promise<string | undefined> {
+  try {
+    const result = await run(target, ['daemon', 'stop'], DAEMON_STOP_TIMEOUT_MS)
+    if (result.code !== 0) {
+      return result.stderr.trim() || result.stdout.trim() || `exited with ${String(result.code)}`
+    }
+    log('retired the previous daemon')
+    return undefined
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause)
+  }
+}
+
+/** Resolve the latest tag and install it. Returns the tag and the install. */
 export async function installLatest(
   deps: InstallDeps,
-): Promise<{ tag: string; path: string }> {
+): Promise<InstallResult & { tag: string }> {
   const tag = await resolveLatestTag(deps.fetchImpl)
-  const path = await installRelease(tag, deps)
-  return { tag, path }
+  return { tag, ...(await installRelease(tag, deps)) }
 }
