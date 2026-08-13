@@ -122,7 +122,7 @@ describe('CliClient', () => {
   it('treats an error object as a failure even at exit code zero', async () => {
     const stdout = '{"error":"project required","hint":"pass --project"}'
     const client = new CliClient(BIN, stubRunner({ stdout, code: 0 }))
-    const result = await client.indexStatus('a')
+    const result = await client.listProjects()
     assert.equal(result.ok, false)
     assert.match(result.ok ? '' : result.error, /project required/)
   })
@@ -170,12 +170,6 @@ describe('CliClient', () => {
     assert.ok(!calls[0]?.args.includes('--config=/tmp/evil'))
   })
 
-  it('binds the index_status project the same way', async () => {
-    const calls: Array<{ command: string; args: string[] }> = []
-    await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).indexStatus('--help')
-    assert.deepEqual(calls[0]?.args, ['cli', 'index_status', '--project=--help', '--json'])
-  })
-
   it('binds a path that looks like a flag when adding a project', async () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('--exclude=x')
@@ -197,6 +191,32 @@ describe('CliClient', () => {
     const result = await client.setConfig('nope', 'x')
     assert.equal(result.ok, false)
     assert.match(result.ok ? '' : result.error, /unknown key/)
+  })
+
+  // Measured stderr of `config get nope` on 0.10.2: the real cause arrives
+  // behind a routine log line the CLI writes on every run, successful ones
+  // included, so quoting stderr raw put the noise first.
+  it('drops the routine log line from a config failure', async () => {
+    const stderr = [
+      'level=info msg=version_cohort.claimed_unheld build=f122276',
+      'error: unknown config key: nope',
+      'Known keys: auto_index auto_index_limit auto_watch ui-lang',
+    ].join('\n')
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.configText(['get', 'nope'])
+    assert.equal(result.ok, false)
+    const error = result.ok ? '' : result.error
+    assert.ok(error.startsWith('error: unknown config key: nope'))
+    assert.doesNotMatch(error, /version_cohort/)
+    assert.match(error, /Known keys:/)
+  })
+
+  it('falls back to the exit code when stderr carries nothing but log lines', async () => {
+    const stderr = 'level=info msg=mem.init budget_mb=512'
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.configText(['get', 'nope'])
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /config exited with 1/)
   })
 
   it('prefers the structured CLI error over stderr when both are present', async () => {

@@ -13,37 +13,23 @@ import {
 describe('assetName', () => {
   it('uses .zip on Windows and .tar.gz elsewhere', () => {
     assert.equal(
-      assetName({ platform: 'win32', arch: 'x64' }, 'standard'),
+      assetName({ platform: 'win32', arch: 'x64' }),
       'codebase-memory-mcp-windows-amd64.zip',
     )
     assert.equal(
-      assetName({ platform: 'linux', arch: 'x64' }, 'standard'),
+      assetName({ platform: 'linux', arch: 'x64' }),
       'codebase-memory-mcp-linux-amd64.tar.gz',
     )
     assert.equal(
-      assetName({ platform: 'darwin', arch: 'arm64' }, 'standard'),
+      assetName({ platform: 'darwin', arch: 'arm64' }),
       'codebase-memory-mcp-darwin-arm64.tar.gz',
     )
   })
 
-  it('inserts -ui for the ui variant', () => {
-    assert.equal(
-      assetName({ platform: 'win32', arch: 'arm64' }, 'ui'),
-      'codebase-memory-mcp-ui-windows-arm64.zip',
-    )
-    assert.equal(
-      assetName({ platform: 'darwin', arch: 'x64' }, 'ui'),
-      'codebase-memory-mcp-ui-darwin-amd64.tar.gz',
-    )
-  })
-
   it('rejects platforms with no published asset', () => {
+    assert.throws(() => assetName({ platform: 'freebsd', arch: 'x64' }), /unsupported platform/i)
     assert.throws(
-      () => assetName({ platform: 'freebsd', arch: 'x64' }, 'standard'),
-      /unsupported platform/i,
-    )
-    assert.throws(
-      () => assetName({ platform: 'linux', arch: 'ia32' }, 'standard'),
+      () => assetName({ platform: 'linux', arch: 'ia32' }),
       /unsupported architecture/i,
     )
   })
@@ -121,6 +107,20 @@ describe('compareVersions', () => {
 
   it('ignores a leading v', () => {
     assert.equal(compareVersions('v0.9.0', '0.9.0'), 0)
+  })
+
+  // The badge asks "is the upstream tag newer than what is installed", so a
+  // pre-release reading equal to its final is an offer to update to something
+  // older than what the user already runs.
+  it('orders a pre-release below its final', () => {
+    assert.ok(compareVersions('0.9.1-rc.1', '0.9.1') < 0)
+    assert.ok(compareVersions('v0.9.1', 'v0.9.1-rc.1') > 0)
+    assert.equal(compareVersions('0.9.1-rc.1', '0.9.1-rc.1'), 0)
+  })
+
+  it('keeps the numeric core deciding before the pre-release does', () => {
+    assert.ok(compareVersions('0.9.2-rc.1', '0.9.1') > 0)
+    assert.ok(compareVersions('0.9.1-rc.2', '0.9.1-rc.1') > 0)
   })
 })
 
