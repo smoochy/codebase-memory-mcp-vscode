@@ -16,7 +16,12 @@ import { COMMAND_IDS } from './commands'
 import { uninstallCommandFor, uninstallCommandForBash } from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
-import { mcpConfigCandidates, withoutMcpEntry } from './mcp/registration'
+import {
+  mcpConfigCandidates,
+  mentionsOurServer,
+  userConfigRoot,
+  withoutMcpEntry,
+} from './mcp/registration'
 import { folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
@@ -716,33 +721,57 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     panel.setUpdateAvailable(updateAvailable)
   }
 
+  /** The named profiles of this installation, empty when there are none. */
+  const profileIds = (): string[] => {
+    const root = userConfigRoot(storageDir)
+    if (root === null) {
+      return []
+    }
+    try {
+      return readdirSync(`${root}/profiles`, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    } catch {
+      return []
+    }
+  }
+
   /**
-   * Take our own entry back out of the `mcp.json` the CLI just wrote.
+   * Take our own entry back out of every `mcp.json` of this installation.
    *
    * VS Code is served by the definition provider, so an entry on disk is a
    * second copy of the same server carrying an absolute path - and that file is
    * synced, where another machine's path cannot start. The CLI detects VS Code
-   * as an agent and writes it anyway, with no flag to deselect one, so this
-   * undoes that one key and leaves every other server in the file alone.
+   * as an agent and writes it into every profile it finds, with no flag to
+   * deselect one, so this undoes that one key wherever it landed and leaves
+   * every other server in each file alone.
+   *
+   * Run at activation as well as after `install`, so a machine that never runs
+   * Setup again still heals the entries Settings Sync delivered to it.
    *
    * Deliberately a stopgap, removable once the CLI can be told to skip VS Code.
    * Best-effort by design: the provider is what makes the server reachable, so
    * a failure here is worth a log line and nothing more.
    */
   const dropOwnMcpEntry = (): void => {
-    const target = mcpConfigCandidates(storageDir)[0]
-    if (target === undefined || !existsSync(target)) {
-      return
-    }
-    try {
-      const stripped = withoutMcpEntry(readTextOrNull(target))
-      if (stripped === null) {
-        return
+    for (const target of mcpConfigCandidates(storageDir, profileIds())) {
+      if (!existsSync(target)) {
+        continue
       }
-      writeFileSync(target, stripped, 'utf8')
-      log(`removed our own MCP entry from ${target}; the server is provided in memory instead`)
-    } catch (cause) {
-      warn(`could not remove our own MCP entry from ${target}: ${String(cause)}`)
+      try {
+        const text = readTextOrNull(target)
+        const stripped = withoutMcpEntry(text)
+        if (stripped === null) {
+          if (mentionsOurServer(text)) {
+            warn(`could not parse ${target}; our MCP entry stays in it`)
+          }
+          continue
+        }
+        writeFileSync(target, stripped, 'utf8')
+        log(`removed our own MCP entry from ${target}; the server is provided in memory instead`)
+      } catch (cause) {
+        warn(`could not remove our own MCP entry from ${target}: ${String(cause)}`)
+      }
     }
   }
 
@@ -1569,6 +1598,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
     },
   })
+
+  // Settings Sync can deliver an entry written on another machine to a host
+  // that never runs Setup again, so the cleanup runs on the way in as well as
+  // after `install`.
+  dropOwnMcpEntry()
 
   void refresh()
 

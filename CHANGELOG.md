@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.18]
+
+- The MCP entry the CLI writes is now taken back out of every profile of this installation, not only the one VS Code is running in. `install` writes an absolute binary path into the `mcp.json` of each profile it finds, and Settings Sync carries those files to other machines, where the path names nothing - so nine of ten profiles used to keep syncing a registration that could not start.
+- That cleanup also runs when the extension starts, not only right after Setup. A machine that has already received such an entry heals itself on the next window rather than waiting for a Setup run that may never happen again.
+- A profile whose `mcp.json` cannot be parsed is still left alone, but now says so in the log when it holds an entry of ours, instead of being indistinguishable from a profile with nothing to clean.
+
 ## [0.9.17]
 
 - Taking an update now retires the engine the replaced binary left running. CLI 0.10.0 starts a per-user daemon on its first call and keeps it alive across sessions, and that daemon refuses clients of any other build, so from the moment the new binary was in place every call failed and reloading the window changed nothing - the daemon is a separate process that survives it.
