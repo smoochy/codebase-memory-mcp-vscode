@@ -1,7 +1,5 @@
 import { BINARY_BASE, UPSTREAM } from '../constants'
 
-export type Variant = 'standard' | 'ui'
-
 export interface Platform {
   platform: NodeJS.Platform
   arch: string
@@ -21,12 +19,15 @@ const ARCH_NAMES: Record<string, string> = {
 const RELEASES = `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}/releases`
 
 /**
- * Release asset name for a platform and variant.
+ * Release asset name for a platform.
  *
  * Windows publishes .zip, darwin and linux .tar.gz. The linux `-portable`
- * assets are deliberately unused - the standard build runs everywhere.
+ * assets are deliberately unused - the standard build runs everywhere. The
+ * `-ui` names are unused for the same reason: 0.10.0 dropped the ui/non-ui
+ * split and always embeds the UI, republishing `ui-*` copies only so old
+ * updaters keep resolving.
  */
-export function assetName(p: Platform, variant: Variant): string {
+export function assetName(p: Platform): string {
   const os = OS_NAMES[p.platform]
   if (os === undefined) {
     throw new Error(`unsupported platform: ${p.platform}`)
@@ -36,8 +37,7 @@ export function assetName(p: Platform, variant: Variant): string {
     throw new Error(`unsupported architecture: ${p.arch}`)
   }
   const suffix = p.platform === 'win32' ? 'zip' : 'tar.gz'
-  const variantPart = variant === 'ui' ? '-ui' : ''
-  return `${BINARY_BASE}${variantPart}-${os}-${arch}.${suffix}`
+  return `${BINARY_BASE}-${os}-${arch}.${suffix}`
 }
 
 /** Reject anything that could escape the release path when interpolated. */
@@ -97,25 +97,48 @@ export function tagFromLocation(location: string): string | null {
   return match?.[1] ?? null
 }
 
-/** Segment-wise numeric comparison; missing segments count as zero. */
+/**
+ * Segment-wise numeric comparison; missing segments count as zero.
+ *
+ * A pre-release sorts below the release it precedes: without that, `parseInt`
+ * read `0.9.1-rc.1` as `0.9.1` and the update badge would offer a release
+ * candidate as if it were the final. Upstream publishes such tags, so this is
+ * a wrong answer waiting for something other than `/releases/latest` - which
+ * never resolves to a pre-release - to feed it a tag.
+ */
 export function compareVersions(a: string, b: string): number {
-  const parse = (v: string): number[] =>
-    v
-      .replace(/^v/, '')
-      .split('.')
-      .map((segment) => Number.parseInt(segment, 10) || 0)
+  // ponytail: the pre-release tail is compared as one string, so `rc.10` sorts
+  // below `rc.2`. Upgrade to per-identifier semver precedence if upstream ever
+  // publishes a double-digit pre-release the badge has to order.
+  const parse = (v: string): { core: number[]; pre: string } => {
+    const [core, ...rest] = v.replace(/^v/, '').split('-')
+    return {
+      core: (core ?? '').split('.').map((segment) => Number.parseInt(segment, 10) || 0),
+      pre: rest.join('-'),
+    }
+  }
 
   const left = parse(a)
   const right = parse(b)
-  const length = Math.max(left.length, right.length)
+  const length = Math.max(left.core.length, right.core.length)
 
   for (let i = 0; i < length; i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0)
+    const diff = (left.core[i] ?? 0) - (right.core[i] ?? 0)
     if (diff !== 0) {
       return diff
     }
   }
-  return 0
+
+  if (left.pre === right.pre) {
+    return 0
+  }
+  if (left.pre === '') {
+    return 1
+  }
+  if (right.pre === '') {
+    return -1
+  }
+  return left.pre < right.pre ? -1 : 1
 }
 
 export function binaryFileName(platform: NodeJS.Platform): string {

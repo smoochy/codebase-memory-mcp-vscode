@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.20]
+
+- A failed CLI call no longer blames the allocator. CLI 0.10.3 opens every run with a routine `level=warn` line about memory preloading, and a warning used to outrank everything else when a call failed without saying why - so an unrelated note was quoted as the cause, and the message the command itself wrote was hidden behind it. The command's own output now comes first, with the remaining log kept beneath it rather than dropped.
+
+## [0.9.19]
+
+- A rejected setting now reads as the reason it was rejected. CLI 0.10.1 started reporting an unknown config key on stderr, where it arrives behind a routine log line the CLI writes on every run, so the settings screen quoted that log line first and the actual message second.
+- Internal only: the unused `index_status` client and the `ui` binary variant, both of which the CLI dropped in 0.10.0, are gone, and a pre-release tag no longer compares equal to the release it precedes.
+
+## [0.9.18]
+
+- The MCP entry the CLI writes is now taken back out of every profile of this installation, not only the one VS Code is running in. `install` writes an absolute binary path into the `mcp.json` of each profile it finds, and Settings Sync carries those files to other machines, where the path names nothing - so nine of ten profiles used to keep syncing a registration that could not start.
+- That cleanup also runs when the extension starts, not only right after Setup. A machine that has already received such an entry heals itself on the next window rather than waiting for a Setup run that may never happen again.
+- A profile whose `mcp.json` cannot be parsed is still left alone, but now says so in the log when it holds an entry of ours, instead of being indistinguishable from a profile with nothing to clean.
+
+## [0.9.17]
+
+- Taking an update now retires the engine the replaced binary left running. CLI 0.10.0 starts a per-user daemon on its first call and keeps it alive across sessions, and that daemon refuses clients of any other build, so from the moment the new binary was in place every call failed and reloading the window changed nothing - the daemon is a separate process that survives it.
+- When that stop does not work, the panel says so and names `codebase-memory-mcp daemon stop`, rather than reporting a finished update over an engine that answers nothing. The notice clears itself as soon as a call gets through.
+- The branch tag is back on the project cards against CLI 0.10.x, which moved the branch out of the `git` object into a flat field. Both shapes are read, so a binary of either generation reports its branch.
+- A project whose checkout has moved since it was indexed is reported as outdated again. CLI 0.10.x reports no commit at all, so the commit now comes from VS Code's own git extension instead of from the CLI.
+
+## [0.9.16]
+
+- The activity-bar update badge now appears in a window that was already running when a release landed. The release lookup used to be resolved once and held for the whole session, so a window open for days kept reporting the answer it got at activation; it is now looked up again once the answer is more than six hours old.
+- The refresh timer no longer does nothing at all while the panel is hidden. It runs the update check on those ticks, which costs one cached network lookup and launches no process, so the panel's CLI polling and its log lines still stop when nobody is looking at it.
+
 ## [0.9.15]
 
 - Every request the extension makes now survives a transient failure. github.com refuses individual HTTP/2 streams under load, which arrives as a bare `fetch failed` and clears on the next attempt, and a single one of those used to end the whole Setup run.

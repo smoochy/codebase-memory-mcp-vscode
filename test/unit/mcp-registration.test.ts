@@ -1,7 +1,9 @@
 import * as assert from 'node:assert/strict'
 import {
   mcpConfigCandidates,
+  mentionsOurServer,
   stripJsonComments,
+  userConfigRoot,
   withoutMcpEntry,
 } from '../../src/mcp/registration'
 
@@ -31,10 +33,36 @@ describe('mcpConfigCandidates', () => {
     )
   })
 
-  it('names the profile own file on a named profile', () => {
+  // The CLI's install writes into every profile, so cleaning only the running
+  // one leaves the rest syncing an absolute path to a machine it cannot start
+  // on. Sorted so the order does not depend on the directory listing.
+  it('names every named profile beside the default one', () => {
     assert.deepEqual(
-      mcpConfigCandidates(`/home/x/.config/Code/User/profiles/-abc123/globalStorage/${extension}`),
-      ['/home/x/.config/Code/User/profiles/-abc123/mcp.json'],
+      mcpConfigCandidates(`C:/Users/x/AppData/Roaming/Code/User/globalStorage/${extension}`, [
+        'builtin',
+        '-24ba6aba',
+      ]),
+      [
+        'C:/Users/x/AppData/Roaming/Code/User/mcp.json',
+        'C:/Users/x/AppData/Roaming/Code/User/profiles/-24ba6aba/mcp.json',
+        'C:/Users/x/AppData/Roaming/Code/User/profiles/builtin/mcp.json',
+      ],
+    )
+  })
+
+  // Running inside a named profile has to reach the same tree as running in
+  // the default one, or nine files stay behind whenever the user happens to
+  // start VS Code in a profile.
+  it('steps out of a named profile to reach the same root', () => {
+    assert.deepEqual(
+      mcpConfigCandidates(
+        `/home/x/.config/Code/User/profiles/-abc123/globalStorage/${extension}`,
+        ['-abc123'],
+      ),
+      [
+        '/home/x/.config/Code/User/mcp.json',
+        '/home/x/.config/Code/User/profiles/-abc123/mcp.json',
+      ],
     )
   })
 
@@ -55,6 +83,22 @@ describe('mcpConfigCandidates', () => {
 
   it('names nothing when the path is not under globalStorage', () => {
     assert.deepEqual(mcpConfigCandidates('/somewhere/else'), [])
+    assert.equal(userConfigRoot('/somewhere/else'), null)
+  })
+})
+
+describe('mentionsOurServer', () => {
+  it('tells an unparsable file that holds our entry from one that does not', () => {
+    assert.equal(mentionsOurServer('{ not json "codebase-memory-mcp": {}'), true)
+    assert.equal(mentionsOurServer('{ not json "other": {}'), false)
+    assert.equal(mentionsOurServer(null), false)
+  })
+
+  // The key, not the substring: a command path ending in the binary's name is
+  // every managed install, and warning about those would be noise on files
+  // holding nothing of ours.
+  it('does not match the binary path alone', () => {
+    assert.equal(mentionsOurServer('{"servers":{"x":{"command":"/bin/codebase-memory-mcp"}}}'), false)
   })
 })
 

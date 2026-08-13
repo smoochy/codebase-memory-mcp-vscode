@@ -52,22 +52,66 @@ export function stripJsonComments(text: string): string {
 }
 
 /**
- * Where the VS Code MCP config lives, derived from the extension's own storage
- * directory.
+ * The `User/` directory of the running installation, derived from the
+ * extension's own storage directory.
  *
- * Deriving it from the home directory instead names the wrong file for any
- * instance started with `--user-data-dir`, and reads the real profile's
- * registration while claiming to describe the running one.
+ * Deriving it from the home directory instead names the wrong tree for any
+ * instance started with `--user-data-dir`, and reads another installation's
+ * files while claiming to describe the running one.
  *
  * `mcp.json` is always the sibling of `globalStorage`, which places it under
- * `User/` on the default profile and under `User/profiles/<id>/` on a named one
- * without either case being spelled out here.
+ * `User/` on the default profile and under `User/profiles/<id>/` on a named
+ * one; the profile segment is stepped over so both cases name the same root.
  */
-export function mcpConfigCandidates(storageDir: string): string[] {
+export function userConfigRoot(storageDir: string): string | null {
   const storage = storageDir.replace(/\\/g, '/').replace(/\/+$/, '')
-  const marker = '/globalStorage/'
-  const index = storage.lastIndexOf(marker)
-  return index === -1 ? [] : [`${storage.slice(0, index)}/mcp.json`]
+  const index = storage.lastIndexOf('/globalStorage/')
+  if (index === -1) {
+    return null
+  }
+  const profileDir = storage.slice(0, index)
+  const named = /^(.*)\/profiles\/[^/]+$/.exec(profileDir)
+  return named === null ? profileDir : (named[1] as string)
+}
+
+/**
+ * Every `mcp.json` of the running installation: the default profile's, plus one
+ * per named profile in `profileIds`.
+ *
+ * The CLI's `install` writes its entry into all of them, so cleaning only the
+ * profile this host runs in leaves the rest carrying an absolute path that
+ * Settings Sync moves to a machine where it cannot start. Profiles are visited
+ * whether or not this extension has ever run in them: the entry there is a side
+ * effect of an `install` the user asked for in some other profile, and it is
+ * valid on this machine alone.
+ *
+ * Other installations - Insiders, VSCodium, a second user data directory - stay
+ * untouched, being installations this host does not own.
+ */
+export function mcpConfigCandidates(
+  storageDir: string,
+  profileIds: readonly string[] = [],
+): string[] {
+  const root = userConfigRoot(storageDir)
+  if (root === null) {
+    return []
+  }
+  return [
+    `${root}/mcp.json`,
+    ...[...profileIds].sort().map((id) => `${root}/profiles/${id}/mcp.json`),
+  ]
+}
+
+/**
+ * Whether the text names a server of ours at all.
+ *
+ * Tells a file with nothing to clean from one that holds our entry but could
+ * not be parsed, which `withoutMcpEntry` reports the same way. Across a tree of
+ * profiles that difference is the only thing separating "nothing to do" from
+ * "gave up on six of ten files".
+ */
+export function mentionsOurServer(text: string | null): boolean {
+  return text !== null && MCP_SERVER_KEYS.some((key) => text.includes(`"${key}"`))
 }
 
 /**

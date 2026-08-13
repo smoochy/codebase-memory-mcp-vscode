@@ -8,6 +8,14 @@ What automation cannot reach, and therefore what a human still has to check by h
 
 Every row below was run against `better-codebase-memory-mcp-0.9.13.vsix` in a scratch profile and passed, on Windows 11 on 2026-08-09 and 2026-08-10 and on macOS on 2026-08-10. Row 13 was run on both platforms; the Linux clipboard variant is still open, and Linux is not a release target for this iteration.
 
+Rows 8, 9, B14 and B15 were re-run against `better-codebase-memory-mcp-0.9.17.vsix` on 2026-08-13, on Windows 11 and on macOS, and passed on both. The earlier sign-off does not speak for them: it predates the definition provider that replaced the file registration entirely. Three things about how this run was set up are worth keeping, because each of them is a way the run could have passed while measuring nothing:
+
+- **It ran in the default profile, not a scratch one.** `mcp.json` lives per profile, and two separately created scratch profiles on two machines are two unrelated local profiles that Settings Sync never connects. B14 in a scratch profile would have passed without a single file crossing between the machines, which is not the question it asks.
+- **What separates a pass from a coincidence is the name in the server list.** `Codebase Memory` is the provider's label from the `betterCmm.codebaseMemory` contribution; `codebase-memory-mcp` is the key the CLI writes into `mcp.json`. Both can be listed at once, because VS Code namespaces server identity by source and does not deduplicate across the two, so "a server is listed" proves nothing on its own.
+- **The two `14`s and the two `15`s in this document are different rows.** Section B numbers a two-machine test and a changed-binary test; section C reuses both numbers for panel appearance and a large project. B14 and B15 are the rows covered here.
+
+What this run does not cover is [issue #801](https://github.com/smoochy/homelab-private/issues/801), found while preparing it rather than while running it: the CLI's `install` writes its entry into every VS Code profile it finds, and the extension removes it only from the profile it is running in. On the Windows machine that left nine profile copies of `mcp.json` holding an absolute Windows path, every one of them carried between machines by Settings Sync. B14 reads the default profile on each machine and passes there, because the default profile is precisely the one the extension cleaned.
+
 Six rows failed on the first attempt and were fixed on the branch before they passed: #3 reported the bare `fetch failed` with no indication that it was a network problem, #9 warned about an entry naming another binary without offering any way out of it, #11 reported a locked target as a half-finished install, #13 put the bare `codebase-memory-mcp install` in the clipboard instead of the resolved binary, and the same command was unusable in Git Bash, which reads its leading call operator as a background job. Each fix carries a unit test.
 
 Two observations that are behaviour rather than defects, recorded so the next run does not chase them:
@@ -55,6 +63,8 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important |
 | 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking |
 | 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking |
+| 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking |
+| 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
 | 13 | Clipboard | Run the copy-uninstall commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
 

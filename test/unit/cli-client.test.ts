@@ -14,6 +14,17 @@ function stubRunner(
 
 const BIN = 'C:/bin/cmm.exe'
 
+/**
+ * What CLI 0.10.3 writes to stderr on every `cli` subcommand, a successful run
+ * included. The first line is a `warn`, which is why severity alone cannot
+ * decide what caused a failure.
+ */
+const ROUTINE_010_3_STDERR =
+  'level=warn msg=mem.allocator.preloading_completed still_preloading=false ' +
+  'detail=allocator_was_still_preloading,_so_arena_creation_and_purging_were_disabled\n' +
+  'level=info msg=mem.allocator.owned classes=all\n' +
+  'level=info msg=mem.init budget_mb=32538 total_ram_mb=65077 source=ram_fraction'
+
 describe('CliClient', () => {
   it('parses the project list past the log preamble', async () => {
     const stdout =
@@ -23,8 +34,44 @@ describe('CliClient', () => {
     const result = await client.listProjects()
     assert.equal(result.ok, true)
     assert.deepEqual(result.ok ? result.value : null, [
-      { name: 'a', root_path: 'D:/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+      {
+        name: 'a',
+        root_path: 'D:/a',
+        branch: null,
+        nodes: undefined,
+        edges: undefined,
+        size_bytes: undefined,
+      },
     ])
+  })
+
+  // The branch moved out of a `git` object and became a flat field in CLI
+  // 0.10.0, and the extension has no say in which binary it talks to: an
+  // external path can name either. Reading only one shape lost the branch tag
+  // without an error anywhere, which is the failure these cover.
+  for (const [label, entry, expected] of [
+    ['the flat 0.10.x field', '"branch":"main"', 'main'],
+    ['the nested 0.9.x object', '"git":{"branch":"main"}', 'main'],
+    ['neither shape', '"nodes":1', null],
+    ['a null flat branch, on a detached head', '"branch":null', null],
+    ['a null nested branch', '"git":{"branch":null}', null],
+    ['an empty branch string', '"branch":""', null],
+    ['a non-string branch', '"branch":7', null],
+  ] as const) {
+    it(`reads the branch from ${label}`, async () => {
+      const stdout = `{"projects":[{"name":"a","root_path":"D:/a",${entry}}]}`
+      const result = await new CliClient(BIN, stubRunner({ stdout })).listProjects()
+      assert.equal(result.ok && result.value[0]?.branch, expected)
+    })
+  }
+
+  // Both shapes present at once is not a payload any measured binary produces.
+  // It is here so the preference is stated rather than incidental: the flat
+  // field is the current one.
+  it('prefers the flat branch when a payload carries both', async () => {
+    const stdout = '{"projects":[{"name":"a","root_path":"D:/a","branch":"new","git":{"branch":"old"}}]}'
+    const result = await new CliClient(BIN, stubRunner({ stdout })).listProjects()
+    assert.equal(result.ok && result.value[0]?.branch, 'new')
   })
 
   // Each of these reached the panel and threw there before listProjects
@@ -56,7 +103,14 @@ describe('CliClient', () => {
     const result = await client.listProjects()
     assert.ok(result.ok)
     assert.deepEqual(result.value, [
-      { name: 'a', root_path: '/a', nodes: undefined, edges: undefined, size_bytes: undefined },
+      {
+        name: 'a',
+        root_path: '/a',
+        branch: null,
+        nodes: undefined,
+        edges: undefined,
+        size_bytes: undefined,
+      },
     ])
   })
 
@@ -79,7 +133,7 @@ describe('CliClient', () => {
   it('treats an error object as a failure even at exit code zero', async () => {
     const stdout = '{"error":"project required","hint":"pass --project"}'
     const client = new CliClient(BIN, stubRunner({ stdout, code: 0 }))
-    const result = await client.indexStatus('a')
+    const result = await client.listProjects()
     assert.equal(result.ok, false)
     assert.match(result.ok ? '' : result.error, /project required/)
   })
@@ -127,12 +181,6 @@ describe('CliClient', () => {
     assert.ok(!calls[0]?.args.includes('--config=/tmp/evil'))
   })
 
-  it('binds the index_status project the same way', async () => {
-    const calls: Array<{ command: string; args: string[] }> = []
-    await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).indexStatus('--help')
-    assert.deepEqual(calls[0]?.args, ['cli', 'index_status', '--project=--help', '--json'])
-  })
-
   it('binds a path that looks like a flag when adding a project', async () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{}' }, calls)).addProject('--exclude=x')
@@ -154,6 +202,32 @@ describe('CliClient', () => {
     const result = await client.setConfig('nope', 'x')
     assert.equal(result.ok, false)
     assert.match(result.ok ? '' : result.error, /unknown key/)
+  })
+
+  // Measured stderr of `config get nope` on 0.10.2: the real cause arrives
+  // behind a routine log line the CLI writes on every run, successful ones
+  // included, so quoting stderr raw put the noise first.
+  it('drops the routine log line from a config failure', async () => {
+    const stderr = [
+      'level=info msg=version_cohort.claimed_unheld build=f122276',
+      'error: unknown config key: nope',
+      'Known keys: auto_index auto_index_limit auto_watch ui-lang',
+    ].join('\n')
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.configText(['get', 'nope'])
+    assert.equal(result.ok, false)
+    const error = result.ok ? '' : result.error
+    assert.ok(error.startsWith('error: unknown config key: nope'))
+    assert.doesNotMatch(error, /version_cohort/)
+    assert.match(error, /Known keys:/)
+  })
+
+  it('falls back to the exit code when stderr carries nothing but log lines', async () => {
+    const stderr = 'level=info msg=mem.init budget_mb=512'
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.configText(['get', 'nope'])
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /config exited with 1/)
   })
 
   it('prefers the structured CLI error over stderr when both are present', async () => {
@@ -200,11 +274,37 @@ describe('CliClient', () => {
   })
 
   it('falls back to stdout when the only stderr is routine logging', async () => {
-    const stderr = 'level=info msg=mem.init budget_mb=32538'
-    const client = new CliClient(BIN, stubRunner({ stdout: 'panic: nil map', stderr, code: 2 }))
+    const client = new CliClient(
+      BIN,
+      stubRunner({ stdout: 'panic: nil map', stderr: ROUTINE_010_3_STDERR, code: 2 }),
+    )
     const result = await client.listProjects()
     assert.equal(result.ok, false)
-    assert.match(result.ok ? '' : result.error, /panic: nil map/)
+    const error = result.ok ? '' : result.error
+    // The command's own channel outranks the routine allocator warning 0.10.3
+    // opens every run with, which is kept below it rather than dropped.
+    assert.match(error, /CLI exited with 2: panic: nil map/)
+    assert.match(error, /Log: level=warn msg=mem\.allocator\.preloading_completed/)
+  })
+
+  it('does not quote the routine allocator warning as the cause of a failure', async () => {
+    const client = new CliClient(
+      BIN,
+      stubRunner({ stdout: '', stderr: ROUTINE_010_3_STDERR, code: 1 }),
+    )
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    const error = result.ok ? '' : result.error
+    assert.match(error, /^CLI exited with 1: /)
+    assert.doesNotMatch(error, /mem\.init/)
+  })
+
+  it('keeps a warn line as the detail when nothing outranks it', async () => {
+    const stderr = `${ROUTINE_010_3_STDERR}\nlevel=warn msg=store locked by another process`
+    const client = new CliClient(BIN, stubRunner({ stdout: '', stderr, code: 1 }))
+    const result = await client.listProjects()
+    assert.equal(result.ok, false)
+    assert.match(result.ok ? '' : result.error, /store locked by another process/)
   })
 
   it('surfaces a runner rejection as a failed result rather than throwing', async () => {

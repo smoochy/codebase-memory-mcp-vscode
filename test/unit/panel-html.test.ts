@@ -404,7 +404,7 @@ describe('renderBody', () => {
               root_path: root,
               nodes: 1,
               edges: 1,
-              ...(branch === undefined ? {} : { git: { branch } }),
+              ...(branch === undefined ? {} : { branch }),
             },
           ],
         }),
@@ -482,9 +482,10 @@ describe('renderBody', () => {
       assert.match(absolute, /title="Index last updated: [0-9]+h( [0-9]+m)? ago"/)
     })
 
-    // The extension decides staleness and passes the answer in. It cannot be
-    // read off `git.base_sha`: that value never advances, so a reindex left
-    // the project marked outdated for good.
+    // The extension decides staleness and passes the answer in. It was never
+    // readable off the CLI payload: 0.9.x reported a `base_sha` that never
+    // advanced, so a reindex left the project marked outdated for good, and
+    // 0.10.x reports no commit at all.
     it('marks an index the extension reported as behind the checkout', () => {
       const html = renderBody(
         model({ projects: [{ name: 'a', root_path: '/a', stale: true }] }),
@@ -497,19 +498,6 @@ describe('renderBody', () => {
     it('says nothing when the index matches the checkout', () => {
       const html = renderBody(
         model({ projects: [{ name: 'a', root_path: '/a', stale: false }] }),
-        'n1',
-      )
-      assert.doesNotMatch(html, /outdated/)
-    })
-
-    // A differing base_sha must not resurrect the old, permanently-true claim.
-    it('ignores base_sha, which the CLI never advances', () => {
-      const html = renderBody(
-        model({
-          projects: [
-            { name: 'a', root_path: '/a', git: { base_sha: 'aaaa1111', head_sha: 'bbbb2222' } },
-          ],
-        }),
         'n1',
       )
       assert.doesNotMatch(html, /outdated/)
@@ -638,6 +626,28 @@ describe('renderBody', () => {
     assert.doesNotMatch(html, /finish registering/)
   })
 
+  // The daemon a CLI 0.10.x install left running refuses the new build, so
+  // every call fails until it is gone. Naming the reload instead would send
+  // the user at the one action that cannot help: the daemon is a separate
+  // process that outlives the window.
+  describe('a daemon that survived an update', () => {
+    it('names the command that retires it, and what the stop reported', () => {
+      const html = renderBody(model({ daemonStopFailure: 'refused' }), 'n1')
+      assert.match(html, /codebase-memory-mcp daemon stop/)
+      assert.match(html, /refused/)
+    })
+
+    it('says nothing when the stop succeeded', () => {
+      const html = renderBody(model({ daemonStopFailure: null }), 'n1')
+      assert.doesNotMatch(html, /daemon stop/)
+    })
+
+    it('escapes what the stop reported', () => {
+      const html = renderBody(model({ daemonStopFailure: XSS_PAYLOAD }), 'n1')
+      assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+    })
+  })
+
   it('does not offer a second Refresh beside the one in the title bar', () => {
     const html = renderBody(model({}), 'n1')
     assert.doesNotMatch(html, /data-command="betterCmm\.refresh"/)
@@ -648,7 +658,7 @@ describe('renderBody', () => {
     const html = renderBody(
       model({
         projects: [
-          { name: 'a', root_path: '/a', git: { branch: XSS_PAYLOAD } },
+          { name: 'a', root_path: '/a', branch: XSS_PAYLOAD },
         ],
       }),
       'n1',

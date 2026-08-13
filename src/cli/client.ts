@@ -22,18 +22,19 @@ export interface ProjectSummary {
   nodes?: number
   edges?: number
   size_bytes?: number
-  /** Present for git checkouts; `branch` is null on a detached or non-git root. */
+  /**
+   * Checked-out branch, null on a detached or non-git root.
+   *
+   * Normalised by {@link CliClient.listProjects}: 0.10.x reports a flat
+   * `branch` string, 0.9.x reported it inside a `git` object that 0.10.x
+   * dropped entirely - along with the commit shas, which no 0.10.x tool
+   * reports at all. The head commit therefore comes from the checkout itself
+   * rather than from the CLI.
+   */
+  branch?: string | null
+  /** Raw 0.9.x shape. Read only to normalise `branch`; nothing else uses it. */
   git?: {
     branch?: string | null
-    /**
-     * Written when the project is first added and never advanced afterwards -
-     * measured against the real CLI, a reindex leaves it untouched. It is
-     * therefore NOT the commit the current index was built from; the extension
-     * records that itself. Kept only because the CLI reports it.
-     */
-    base_sha?: string | null
-    /** Commit the working tree is on now. */
-    head_sha?: string | null
   }
   /**
    * Filled in by the extension, not the CLI: when this extension last indexed
@@ -51,12 +52,23 @@ export interface ProjectSummary {
   changed_count?: number
 }
 
-export interface IndexStatus {
-  indexing: boolean
-  progress?: number
-}
-
 const DEFAULT_TIMEOUT_MS = 30_000
+
+/**
+ * The branch, from whichever of the two shapes the running binary reports.
+ *
+ * Neither is preferred over the other by version, because the binary the user
+ * points `betterCmm.externalBinaryPath` at can be either one, and no version
+ * is asked for: the flat field is 0.10.x, the nested one 0.9.x, and only one
+ * of them is ever present.
+ */
+export function branchOf(entry: ProjectSummary): string | null {
+  if (typeof entry.branch === 'string' && entry.branch.length > 0) {
+    return entry.branch
+  }
+  const nested = entry.git?.branch
+  return typeof nested === 'string' && nested.length > 0 ? nested : null
+}
 
 /** Keep a count only when it is a real number; anything else becomes absent. */
 function finiteOrUndefined(value: unknown): number | undefined {
@@ -74,11 +86,41 @@ function finiteOrUndefined(value: unknown): number | undefined {
  * output that is not logfmt at all, can carry a reason.
  */
 export function stderrCause(stderr: string): string {
-  return stderr
-    .split('\n')
-    .filter((line) => !/^level=(?:info|debug|trace)\b/.test(line.trim()))
-    .join('\n')
-    .trim()
+  return keptStderrLines(stderr).join('\n').trim()
+}
+
+const ROUTINE_LEVEL = /^level=(?:info|debug|trace)\b/
+const WARN_LEVEL = /^level=warn\b/
+
+function keptStderrLines(stderr: string): string[] {
+  return stderr.split('\n').filter((line) => !ROUTINE_LEVEL.test(line.trim()))
+}
+
+/**
+ * The kept stderr, split by how likely it is to be the reason a run failed.
+ *
+ * `level=warn` used to rank as a cause, on the reading that a warning can carry
+ * one. CLI 0.10.3 opens every `cli` subcommand with a routine
+ * `level=warn msg=mem.allocator.preloading_completed ...` line, on a successful
+ * run included, so that reading now quotes an allocator note as the cause of
+ * every silent non-zero exit and hides the command's own stdout behind it.
+ * Severity is only the tiebreak inside stderr: what outranks both is stdout,
+ * the channel the command itself writes on.
+ *
+ * Nothing is dropped. A warn line that does carry the reason still reaches the
+ * user - as the log beneath a better candidate, or as the detail when there is
+ * no better candidate.
+ */
+export function splitStderr(stderr: string): { cause: string; log: string } {
+  const kept = keptStderrLines(stderr)
+  const isWarn = (line: string): boolean => WARN_LEVEL.test(line.trim())
+  return {
+    cause: kept
+      .filter((line) => !isWarn(line))
+      .join('\n')
+      .trim(),
+    log: kept.filter(isWarn).join('\n').trim(),
+  }
 }
 
 /** Thin wrapper around the CLI. All calls are read-only except add and remove. */
@@ -104,10 +146,14 @@ export class CliClient {
       return parsed
     }
 
-    // No usable JSON came back, so fall back to whatever the process reported.
+    // No usable JSON came back, so fall back to whatever the process reported,
+    // best candidate first and the rest kept as log rather than discarded.
     if (output.code !== 0) {
-      const detail = stderrCause(output.stderr) || output.stdout.trim() || parsed.error
-      return { ok: false, error: `CLI exited with ${String(output.code)}: ${detail}` }
+      const { cause, log } = splitStderr(output.stderr)
+      const ranked = [cause, output.stdout.trim(), log].filter((part) => part.length > 0)
+      const detail = ranked.shift() ?? parsed.error
+      const tail = ranked.length > 0 ? `\nLog: ${ranked.join('\n')}` : ''
+      return { ok: false, error: `CLI exited with ${String(output.code)}: ${detail}${tail}` }
     }
     return parsed
   }
@@ -142,15 +188,12 @@ export class CliClient {
         // that is not a finite number here rather than at each use.
         .map((entry) => ({
           ...entry,
+          branch: branchOf(entry),
           nodes: finiteOrUndefined(entry.nodes),
           edges: finiteOrUndefined(entry.edges),
           size_bytes: finiteOrUndefined(entry.size_bytes),
         })),
     }
-  }
-
-  async indexStatus(project: string): Promise<CliResult<IndexStatus>> {
-    return this.json<IndexStatus>(['cli', 'index_status', `--project=${project}`, '--json'])
   }
 
   async addProject(path: string): Promise<CliResult<unknown>> {
@@ -174,7 +217,10 @@ export class CliClient {
     try {
       const output = await this.run(this.binaryPath, ['config', ...args], this.timeoutMs)
       if (output.code !== 0) {
-        return { ok: false, error: output.stderr.trim() || `config exited with ${String(output.code)}` }
+        return {
+          ok: false,
+          error: stderrCause(output.stderr) || `config exited with ${String(output.code)}`,
+        }
       }
       return { ok: true, value: output.stdout }
     } catch (cause) {
