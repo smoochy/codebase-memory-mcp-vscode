@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.21]
+
+- Internal only: the compiler moves to TypeScript 7. The native compiler no longer includes everything under `node_modules/@types` on its own, so the type packages this project relies on are now named in both tsconfigs rather than found by a sweep. No behaviour changes.
+
 ## [0.9.20]
 
 - A failed CLI call no longer blames the allocator. CLI 0.10.3 opens every run with a routine `level=warn` line about memory preloading, and a warning used to outrank everything else when a call failed without saying why - so an unrelated note was quoted as the cause, and the message the command itself wrote was hidden behind it. The command's own output now comes first, with the remaining log kept beneath it rather than dropped.

@@ -9,7 +9,10 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "sourceMap": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // TypeScript 7 no longer sweeps node_modules/@types automatically, so every
+    // type package this project relies on has to be named here.
+    "types": ["node", "vscode"]
   },
   "include": ["src"]
 }
