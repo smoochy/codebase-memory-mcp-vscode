@@ -2,7 +2,7 @@
   "name": "better-codebase-memory-mcp",
   "displayName": "Better Codebase Memory MCP",
   "description": "Manage the codebase-memory-mcp engine from VS Code: status, projects, settings, and self-managed binary updates.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "smoochy",
   "license": "MIT",
   "repository": {
