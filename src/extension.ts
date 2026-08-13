@@ -2,7 +2,13 @@ import * as vscode from 'vscode'
 import { installOps, readTextOrNull, runProcess } from './adapters'
 import { compareVersions } from './binary/assets'
 import { externalCandidates, findFirstExisting, managedBinaryPath } from './binary/locate'
-import { installLatest, installRelease, refusesManagedInstall, type InstallDeps } from './binary/manager'
+import {
+  installLatest,
+  installRelease,
+  refusesManagedInstall,
+  type InstallDeps,
+  type InstallResult,
+} from './binary/manager'
 import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binary/shells'
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
@@ -22,6 +28,23 @@ import { delimiter, dirname, join } from 'node:path'
 import { createLatestTagCache, resolveLatestTag, withRetry } from './binary/fetch'
 
 let refreshTimer: NodeJS.Timeout | undefined
+
+/**
+ * The part of the built-in git extension's API this extension uses.
+ *
+ * Declared here rather than imported: `vscode.git` ships its `git.d.ts` in its
+ * own source tree, which is not published as a package, so the shape has to be
+ * stated by whoever consumes it. Only the head commit is read.
+ */
+interface GitRepository {
+  state: { HEAD?: { commit?: string } }
+}
+interface GitExports {
+  getAPI(version: 1): {
+    getRepository(uri: vscode.Uri): GitRepository | null
+    openRepository(uri: vscode.Uri): Thenable<GitRepository | null>
+  }
+}
 
 function setting<T>(key: string, fallback: T): T {
   return vscode.workspace.getConfiguration('betterCmm').get<T>(key) ?? fallback
@@ -167,21 +190,71 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    * appears not to have taken.
    */
   let restartRequired: false | 'binary' = false
+  /**
+   * Why the daemon left over from the replaced binary is still running, or
+   * null when there is nothing to report.
+   *
+   * Cleared by the next refresh that reaches the CLI, because a call that
+   * succeeds is proof the conflict is gone - whether the user retired the
+   * daemon by hand or it exited on its own.
+   */
+  let daemonStopFailure: string | null = null
 
   /** Path this extension recorded installing, or null when it installed nothing. */
   const ownedInstallPath = (): string | null =>
     context.globalState.get<string>(OWNED_INSTALL_KEY) ?? null
 
   /**
+   * Head commit of a checkout, or null when there is none to read.
+   *
+   * CLI 0.10.x dropped the `git` object from `list_projects` and no other tool
+   * it exposes reports a commit, so the sha that stale detection compares
+   * against comes from the checkout itself. VS Code's own git extension is the
+   * reader: it is built in, and it already resolves packed refs, detached
+   * heads, worktrees and the gitdir files submodules use - every one of which
+   * a hand-written `.git/HEAD` parser would have to get right on a path the
+   * user chose.
+   */
+  const headCommit = async (rootPath: string): Promise<string | null> => {
+    const extension = vscode.extensions.getExtension<GitExports>('vscode.git')
+    // Only ever read from an already-active git extension, never activated
+    // here: under `--disable-extensions` the built-in one is present but
+    // disabled, and awaiting its activation never returns - which hung the
+    // refresh in the integration tier rather than failing it. Nothing is lost
+    // by waiting, because a refresh runs every few seconds and the git
+    // extension activates on startup wherever there is a repository at all.
+    if (extension === undefined || !extension.isActive) {
+      return null
+    }
+    try {
+      const api = extension.exports.getAPI(1)
+      const uri = vscode.Uri.file(rootPath)
+      // `getRepository` only answers for repositories the git extension has
+      // already opened, which is the workspace's own. A project indexed from
+      // somewhere else is opened once here and cached by that extension from
+      // then on, so this is not a per-refresh cost.
+      const repository = api.getRepository(uri) ?? (await api.openRepository(uri))
+      const commit = repository?.state.HEAD?.commit
+      return typeof commit === 'string' && commit.length > 0 ? commit : null
+    } catch {
+      // A root that is not a repository, or has been deleted, is not an error
+      // to report: it means no claim can be made about staleness, which is the
+      // same answer as a project the extension has never indexed.
+      return null
+    }
+  }
+
+  /**
    * What the extension remembers about each index it built.
    *
-   * The CLI reports `git.base_sha`, which reads like the commit the index was
-   * built from and is not: it is written when a project is first added and a
-   * later reindex leaves it untouched, so comparing it against `head_sha`
-   * marked a project outdated permanently - measured directly against the real
-   * binary, including immediately after a reindex reported success. So the
-   * extension keeps its own note instead, and a project it has never indexed
-   * gets no note and therefore no claim either way.
+   * 0.9.x reported a `git.base_sha`, which read like the commit the index was
+   * built from and was not: it was written when a project was first added and
+   * a later reindex left it untouched, so comparing against it marked a
+   * project outdated permanently - measured directly against the real binary,
+   * including immediately after a reindex reported success. So the extension
+   * keeps its own note instead, and a project it has never indexed gets no
+   * note and therefore no claim either way. 0.10.x removed both shas, which
+   * costs this nothing: the note was always the extension's own.
    */
   const indexRecords = (): Record<string, IndexRecord> =>
     context.globalState.get<Record<string, IndexRecord>>(INDEX_RECORDS_KEY) ?? {}
@@ -492,6 +565,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     if (state.activePath !== null) {
       const client = new CliClient(state.activePath, runProcess)
       const result = await client.listProjects()
+      // A call that got through is the proof the conflicting daemon is gone.
+      if (result.ok) {
+        daemonStopFailure = null
+      }
       // Null prototype: the keys are project names the CLI chose, and on a
       // plain object `__proto__` is an assignment to the prototype rather than
       // an entry.
@@ -501,11 +578,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       )
       let recordsChanged = false
 
-      projects = (result.ok ? result.value : []).map((project) => {
-        const head =
-          typeof project.git?.head_sha === 'string' && project.git.head_sha.length > 0
-            ? project.git.head_sha
-            : null
+      projects = await Promise.all(
+        (result.ok ? result.value : []).map(async (project) => {
+        const head = await headCommit(project.root_path)
         const existing = records[project.name]
         const mtime = storeMtime(project.name)
         const record = advanceIndexRecord(existing, head, mtime)
@@ -523,7 +598,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           stale:
             record?.sha != null && head !== null ? record.sha !== head : undefined,
         }
-      })
+        }),
+      )
 
       // Say it once per project, when it changes: a refresh runs every few
       // seconds, and repeating "outdated" on every tick buries the log.
@@ -602,6 +678,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       updateAvailable,
       extensionVersion,
       restartRequired,
+      daemonStopFailure,
       platform: process.platform,
       gitBashAvailable: gitBashAvailable(),
       managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
@@ -974,11 +1051,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
           return
         }
 
+        let outcome: InstallResult
         try {
           // The panel's update button turns into its own progress bar, so the
           // percentage goes there as well as into the notification.
           panel.setUpdateProgress(0)
-          await vscode.window.withProgress(
+          outcome = await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
               title: wizardStepTitle('download-binary'),
@@ -1001,8 +1079,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         log(`update installed ${latestTag} (was ${installed.value})`)
         // The running server is still the process started from the old binary,
         // and the toast saying so is collapsed by default. The panel is where
-        // the user just clicked, so it says it too, until the reload.
+        // the user just clicked, so it says it too, until the server restarts.
         restartRequired = 'binary'
+        // A daemon that survived the update refuses every client of the new
+        // build, so nothing works until it is gone. The install itself is
+        // fine, which is exactly why this has to be said: the panel would
+        // otherwise report a finished update over a CLI that fails on every
+        // call.
+        daemonStopFailure = outcome.daemonStopError ?? null
+        if (daemonStopFailure !== null) {
+          warn(`the previous daemon could not be stopped: ${daemonStopFailure}`)
+        }
         // The freshly resolved tag is now the installed one, so the cached
         // answer would otherwise keep offering an update that already happened.
         latestTagCache.set(latestTag)
@@ -1071,7 +1158,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       for (const folder of picked) {
         const added = projects.find((project) => samePath(project.root_path, folder.fsPath))
         if (added !== undefined && indexRecords()[added.name] === undefined) {
-          await rememberIndexed(added.name, added.git?.head_sha)
+          await rememberIndexed(added.name, await headCommit(added.root_path))
         }
       }
     },
@@ -1240,7 +1327,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         // CLI actually said, on the one line that also names who asked.
         const report = indexReport(result.value, { nodes: project.nodes, edges: project.edges })
         log(`User: reindex "${folderName(project.root_path)}" (${project.root_path}): ${report}`)
-        await rememberIndexed(project.name, project.git?.head_sha)
+        await rememberIndexed(project.name, await headCommit(project.root_path))
         void vscode.window.showInformationMessage(`${project.name}: ${report}`)
       } else {
         warn(`User: reindex "${folderName(project.root_path)}" (${project.root_path}) failed: ${result.error}`)
@@ -1289,7 +1376,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
                 `reindex "${project.name}": ` +
                   indexReport(result.value, { nodes: project.nodes, edges: project.edges }),
               )
-              await rememberIndexed(project.name, project.git?.head_sha)
+              await rememberIndexed(project.name, await headCommit(project.root_path))
             } else {
               failures.push(project.root_path)
               log(`reindex failed for ${project.root_path}: ${result.error}`)
@@ -1391,7 +1478,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
             `Auto Reindex: "${folderName(project.root_path)}" (${project.root_path}): ` +
               indexReport(result.value, { nodes: project.nodes, edges: project.edges }),
           )
-          await rememberIndexed(project.name, project.git?.head_sha)
+          await rememberIndexed(project.name, await headCommit(project.root_path))
         } else {
           // A root that was deleted or unmounted fails here every tick. It is
           // logged and skipped; one broken repository must not stop the rest.

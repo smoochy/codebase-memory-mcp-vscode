@@ -39,6 +39,12 @@ export interface PanelModel {
    * it is provided rather than written - only for it to be the new file.
    */
   restartRequired?: boolean | 'binary'
+  /**
+   * Why the daemon started by the replaced binary could not be retired, when
+   * it could not be. From 0.10.0 that daemon refuses clients of another build,
+   * so until it is gone every CLI call fails and the panel shows nothing.
+   */
+  daemonStopFailure?: string | null
   /** CLI settings from `config list`, shown on the settings screen. */
   cliSettings?: CliSetting[]
   /** Host platform, so the uninstall block offers the right shell. */
@@ -389,8 +395,8 @@ function projectCards(
           : '<span class="sep">·</span>' +
             `<span>${escapeHtml(formatBytes(project.size_bytes))}</span>`) +
         indexedAt(project, absoluteTime, locale) +
-        (typeof project.git?.branch === 'string' && project.git.branch.length > 0
-          ? '<span class="sep">·</span>' + branchTag(project.git.branch)
+        (typeof project.branch === 'string' && project.branch.length > 0
+          ? '<span class="sep">·</span>' + branchTag(project.branch)
           : '') +
         '</div>' +
         '</div>'
@@ -824,13 +830,30 @@ export function renderBody(model: PanelModel, nonce: string): string {
     parts.push(notice('info', state.notice))
   }
 
+  // A daemon of the old build refuses every call the new one makes, so this
+  // outranks the restart notice: restarting the server changes nothing while
+  // it is up, and the command that does is the one named here.
+  if (typeof model.daemonStopFailure === 'string' && model.daemonStopFailure.length > 0) {
+    parts.push(
+      notice(
+        'warning',
+        'The new binary is installed, but the engine left running by the old one could not be ' +
+          'stopped, and it refuses calls from a different version. Run "codebase-memory-mcp ' +
+          'daemon stop" in a terminal; the panel clears this once a call gets through. ' +
+          `It reported: ${model.daemonStopFailure}`,
+      ),
+    )
+  }
+
   // A server VS Code already started is a process from the file as it was. The
   // definition itself needs no reload - it is provided, not written.
   if (model.restartRequired === true || model.restartRequired === 'binary') {
     parts.push(
       notice(
         'warning',
-        'Restart the MCP server to run the new binary - the running one started from the old file.',
+        'Restart the MCP server to run the new binary - the running one started from the old ' +
+          'file. Reloading the window restarts it too; the engine itself has already been ' +
+          'switched over.',
       ),
     )
   }

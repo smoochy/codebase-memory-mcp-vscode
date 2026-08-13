@@ -83,10 +83,20 @@ function stubFetch(routes: Record<string, Response>): FetchLike {
   }
 }
 
-/** A run() stub that simulates `tar` by writing the extracted binary itself. */
+/**
+ * A run() stub that simulates `tar` by writing the extracted binary itself,
+ * and answers the post-install `daemon stop` the way a real binary does.
+ */
 function extractingRun(ops: InstallFileOps, calls: string[][]): InstallDeps['run'] {
   return (command, args) => {
     calls.push([command, ...args])
+    if (args[0] === 'daemon') {
+      return Promise.resolve({
+        stdout: 'daemon: not running (nothing to stop)',
+        stderr: '',
+        code: 0,
+      } satisfies RunOutput)
+    }
     const targetDir = args[args.length - 1]
     if (targetDir === undefined) {
       throw new Error('no target dir in args')
@@ -121,12 +131,108 @@ function baseDeps(overrides: Partial<InstallDeps> = {}): InstallDeps {
 describe('installRelease', () => {
   it('installs the verified binary to the managed path', async () => {
     const deps = baseDeps()
-    const target = await installRelease(TAG, deps)
+    const { path: target, daemonStopError } = await installRelease(TAG, deps)
 
     assert.equal(target, '/storage/bin/codebase-memory-mcp')
+    assert.equal(daemonStopError, undefined)
     const ops = deps.ops as ReturnType<typeof memoryOps>
     assert.ok(ops.files.has(target), 'the managed binary must exist')
     assert.deepEqual([...ops.files.get(target) ?? []], [9, 9, 9])
+  })
+
+  // From CLI 0.10.0 a daemon started by the replaced binary survives the
+  // update and refuses every client of the new build, so the install is not
+  // finished until it is retired. Measured against real 0.10.2 and 0.10.3
+  // binaries: the conflict is an exit 1 on the next call, and stopping across
+  // versions works.
+  describe('the surviving daemon', () => {
+    /** Every run() call, so the daemon stop can be found and ordered. */
+    function tracked(): { deps: InstallDeps; calls: string[][] } {
+      const ops = memoryOps()
+      const calls: string[][] = []
+      return { deps: baseDeps({ ops, run: extractingRun(ops, calls) }), calls }
+    }
+
+    it('stops it with the newly installed binary, after the binary is in place', async () => {
+      const { deps, calls } = tracked()
+      await installRelease(TAG, deps)
+
+      const stop = calls.find((call) => call[1] === 'daemon')
+      assert.deepEqual(stop, ['/storage/bin/codebase-memory-mcp', 'daemon', 'stop'])
+      // After extraction, so the binary it runs is the one just installed.
+      assert.ok(
+        calls.indexOf(stop) > calls.findIndex((call) => call[1] === '-xzf'),
+        'the stop must come after the archive is extracted',
+      )
+    })
+
+    // A binary in place with a daemon that would not die is worse than a
+    // failed install: every call fails and nothing says why.
+    it('reports a stop that exits non-zero without failing the install', async () => {
+      const ops = memoryOps()
+      const calls: string[][] = []
+      const extract = extractingRun(ops, calls)
+      const deps = baseDeps({
+        ops,
+        run: (command, args, timeout) =>
+          args[0] === 'daemon'
+            ? Promise.resolve({ stdout: '', stderr: 'refused', code: 1 } satisfies RunOutput)
+            : extract(command, args, timeout),
+      })
+
+      const result = await installRelease(TAG, deps)
+      assert.equal(result.path, '/storage/bin/codebase-memory-mcp')
+      assert.equal(result.daemonStopError, 'refused')
+      assert.ok(ops.files.has(result.path), 'the install itself must still have happened')
+    })
+
+    it('reports a stop that could not be spawned at all', async () => {
+      const ops = memoryOps()
+      const calls: string[][] = []
+      const extract = extractingRun(ops, calls)
+      const deps = baseDeps({
+        ops,
+        run: (command, args, timeout) =>
+          args[0] === 'daemon'
+            ? Promise.reject(new Error('spawn ENOENT'))
+            : extract(command, args, timeout),
+      })
+
+      const result = await installRelease(TAG, deps)
+      assert.equal(result.daemonStopError, 'spawn ENOENT')
+    })
+
+    // 0.9.x has no `daemon` subcommand, so it answers on stdout with a usage
+    // message and no stderr. The message still has to name something.
+    it('falls back to stdout when a stop failed without saying so on stderr', async () => {
+      const ops = memoryOps()
+      const calls: string[][] = []
+      const extract = extractingRun(ops, calls)
+      const deps = baseDeps({
+        ops,
+        run: (command, args, timeout) =>
+          args[0] === 'daemon'
+            ? Promise.resolve({ stdout: 'unknown command', stderr: '', code: 2 } satisfies RunOutput)
+            : extract(command, args, timeout),
+      })
+
+      assert.equal((await installRelease(TAG, deps)).daemonStopError, 'unknown command')
+    })
+
+    it('reports the exit code when a failed stop said nothing at all', async () => {
+      const ops = memoryOps()
+      const calls: string[][] = []
+      const extract = extractingRun(ops, calls)
+      const deps = baseDeps({
+        ops,
+        run: (command, args, timeout) =>
+          args[0] === 'daemon'
+            ? Promise.resolve({ stdout: '', stderr: '', code: 3 } satisfies RunOutput)
+            : extract(command, args, timeout),
+      })
+
+      assert.equal((await installRelease(TAG, deps)).daemonStopError, 'exited with 3')
+    })
   })
 
   it('cleans up the temp archive and extraction directory on success', async () => {

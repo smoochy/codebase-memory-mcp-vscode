@@ -22,18 +22,19 @@ export interface ProjectSummary {
   nodes?: number
   edges?: number
   size_bytes?: number
-  /** Present for git checkouts; `branch` is null on a detached or non-git root. */
+  /**
+   * Checked-out branch, null on a detached or non-git root.
+   *
+   * Normalised by {@link CliClient.listProjects}: 0.10.x reports a flat
+   * `branch` string, 0.9.x reported it inside a `git` object that 0.10.x
+   * dropped entirely - along with the commit shas, which no 0.10.x tool
+   * reports at all. The head commit therefore comes from the checkout itself
+   * rather than from the CLI.
+   */
+  branch?: string | null
+  /** Raw 0.9.x shape. Read only to normalise `branch`; nothing else uses it. */
   git?: {
     branch?: string | null
-    /**
-     * Written when the project is first added and never advanced afterwards -
-     * measured against the real CLI, a reindex leaves it untouched. It is
-     * therefore NOT the commit the current index was built from; the extension
-     * records that itself. Kept only because the CLI reports it.
-     */
-    base_sha?: string | null
-    /** Commit the working tree is on now. */
-    head_sha?: string | null
   }
   /**
    * Filled in by the extension, not the CLI: when this extension last indexed
@@ -57,6 +58,22 @@ export interface IndexStatus {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
+
+/**
+ * The branch, from whichever of the two shapes the running binary reports.
+ *
+ * Neither is preferred over the other by version, because the binary the user
+ * points `betterCmm.externalBinaryPath` at can be either one, and no version
+ * is asked for: the flat field is 0.10.x, the nested one 0.9.x, and only one
+ * of them is ever present.
+ */
+export function branchOf(entry: ProjectSummary): string | null {
+  if (typeof entry.branch === 'string' && entry.branch.length > 0) {
+    return entry.branch
+  }
+  const nested = entry.git?.branch
+  return typeof nested === 'string' && nested.length > 0 ? nested : null
+}
 
 /** Keep a count only when it is a real number; anything else becomes absent. */
 function finiteOrUndefined(value: unknown): number | undefined {
@@ -142,6 +159,7 @@ export class CliClient {
         // that is not a finite number here rather than at each use.
         .map((entry) => ({
           ...entry,
+          branch: branchOf(entry),
           nodes: finiteOrUndefined(entry.nodes),
           edges: finiteOrUndefined(entry.edges),
           size_bytes: finiteOrUndefined(entry.size_bytes),
