@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.20]
+
+- A failed CLI call no longer blames the allocator. CLI 0.10.3 opens every run with a routine `level=warn` line about memory preloading, and a warning used to outrank everything else when a call failed without saying why - so an unrelated note was quoted as the cause, and the message the command itself wrote was hidden behind it. The command's own output now comes first, with the remaining log kept beneath it rather than dropped.
+
 ## [0.9.19]
 
 - A rejected setting now reads as the reason it was rejected. CLI 0.10.1 started reporting an unknown config key on stderr, where it arrives behind a routine log line the CLI writes on every run, so the settings screen quoted that log line first and the actual message second.
