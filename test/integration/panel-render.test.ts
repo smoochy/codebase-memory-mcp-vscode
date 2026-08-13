@@ -90,6 +90,18 @@ describe('panel renders in a real extension host', () => {
   // Executing each one proves the handler runs. A handler that throws is
   // indistinguishable from a dead button in the UI. Commands that open a modal
   // dialog (addProject, removeProject) are excluded - they would block here.
+  //
+  // The bounds are not one shared number, because these commands do not await
+  // the same amount of real work. A refresh awaits one `list_projects`, whose
+  // own CliClient timeout is 30_000 - so a 30_000 bound here raced the call it
+  // was waiting on and could not tell a hung CLI from a slow one. Reindex is
+  // one `index_repository` per registered project in sequence, so its runtime
+  // is a property of the developer's store rather than of the extension:
+  // measured on a warm 16-project store, 2.4-4.0 s each and 49.7 s in total.
+  // ponytail: a flat ceiling rather than one derived from the project count -
+  // it fails loudly on a store several times that size, which is the point at
+  // which this test measures the binary and should be reconsidered, not raised.
+  const BOUND_MS: Record<string, number> = { 'betterCmm.reindex': 240_000 }
   for (const command of [
     'betterCmm.refresh',
     'betterCmm.showLogs',
@@ -97,7 +109,7 @@ describe('panel renders in a real extension host', () => {
     'betterCmm.reindex',
   ]) {
     it(`executes ${command} without throwing`, async function () {
-      this.timeout(30_000)
+      this.timeout(BOUND_MS[command] ?? 60_000)
       await vscode.commands.executeCommand(command)
     })
   }
