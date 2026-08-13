@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0]
+
+- First published release, on the VS Code Marketplace and on Open VSX. Nothing about the extension changes here: 1.0.0 is the version that ships rather than a version that adds anything, and everything it does arrived over the 0.9.x line below.
+- The `allowScripts` entry for esbuild named a version the lockfile no longer resolved, so npm blocked the install script it exists to allow. It now names the resolved version.
+
 ## [0.9.21]
 
 - Internal only: the compiler moves to TypeScript 7. The native compiler no longer includes everything under `node_modules/@types` on its own, so the type packages this project relies on are now named in both tsconfigs rather than found by a sweep. No behaviour changes.
