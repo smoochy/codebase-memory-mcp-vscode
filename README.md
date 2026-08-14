@@ -25,6 +25,7 @@ If this project saves you time or helps your setup, you can support ongoing main
   - [Settings](#settings)
   - [Commands](#commands)
   - [Development](#development)
+  - [Transparency](#transparency)
   - [Maintainers](#maintainers)
   - [Contributing](#contributing)
   - [License](#license)
@@ -137,6 +138,10 @@ uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').w
 ```
 
 `docs/MANUAL-TESTING.md` holds the manual checklist for the paths a headless suite cannot reach. `CHANGELOG.md` records every released version.
+
+## Transparency
+
+The code, documentation, and related project materials in this repository were created and refined with AI assistance, using Claude Code. All generated output was reviewed and adapted before publication. Beyond the automated suites named above, every release is additionally exercised by hand against a real editor, following the checklist in [docs/MANUAL-TESTING.md](docs/MANUAL-TESTING.md) - it covers the install, update, reindex and uninstall paths a headless suite cannot reach.
 
 ## Maintainers
 
