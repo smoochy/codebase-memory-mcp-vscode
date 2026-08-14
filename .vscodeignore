@@ -19,6 +19,9 @@ scripts/**
 # Build input for media/icon.png. The manifest points the listing at the PNG,
 # so the vector source is only needed to regenerate it.
 media/icon-marketplace.svg
+# README screenshots. The marketplace renders them from their absolute
+# raw.githubusercontent URLs, so the files themselves need not be packaged.
+assets/**
 # Repository metadata, meaningless inside an installed extension.
 .gitignore
 .github/**
