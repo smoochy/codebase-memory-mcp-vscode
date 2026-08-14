@@ -44,6 +44,9 @@ export const MCP_SERVER_KEYS: readonly string[] = ['codebase-memory-mcp', 'codeb
 
 export const UNINSTALL_COMMAND = 'codebase-memory-mcp uninstall'
 
+/** The stop the panel asks for when a daemon of the replaced build is still up. */
+export const DAEMON_STOP_COMMAND = 'codebase-memory-mcp daemon stop'
+
 /**
  * Characters a shell still acts on inside double quotes, plus anything that
  * would submit the line before the user can read it.
@@ -98,8 +101,29 @@ function commandFor(
  * takes forward slashes and no call operator.
  */
 export function uninstallCommandForBash(binaryPath: string | null): string {
+  return bashCommandFor(binaryPath, 'uninstall', UNINSTALL_COMMAND)
+}
+
+function bashCommandFor(binaryPath: string | null, subcommand: string, bare: string): string {
   if (binaryPath === null || REJECTED_IN_PATH.test(binaryPath)) {
-    return UNINSTALL_COMMAND
+    return bare
   }
-  return `"${binaryPath.replace(/\\/g, '/')}" uninstall`
+  return `"${binaryPath.replace(/\\/g, '/')}" ${subcommand}`
+}
+
+/**
+ * `daemon stop`, bound to the same binary for the same reason as the uninstall:
+ * the panel asks for this one when the daemon of the replaced build is still up,
+ * and a managed install is never on PATH, so the bare name would fail for
+ * exactly the users the notice is shown to.
+ */
+export function daemonStopCommandFor(
+  binaryPath: string | null,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return commandFor(binaryPath, 'daemon stop', DAEMON_STOP_COMMAND, platform)
+}
+
+export function daemonStopCommandForBash(binaryPath: string | null): string {
+  return bashCommandFor(binaryPath, 'daemon stop', DAEMON_STOP_COMMAND)
 }

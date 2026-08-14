@@ -13,7 +13,12 @@ import { engineLogDirectory, gitBashCandidates, projectStorePath } from './binar
 import { CliClient, type ProjectSummary } from './cli/client'
 import { mergeSettings, parseConfigKeys, parseConfigList, type CliSetting } from './cli/configParse'
 import { COMMAND_IDS } from './commands'
-import { uninstallCommandFor, uninstallCommandForBash } from './constants'
+import {
+  daemonStopCommandFor,
+  daemonStopCommandForBash,
+  uninstallCommandFor,
+  uninstallCommandForBash,
+} from './constants'
 import { LogFile } from './log-file'
 import { redactSecrets, shouldLog, truncateForLog, type LogLevel } from './logging'
 import {
@@ -963,6 +968,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         uninstallCommandForBash(resolveState(ownedInstallPath()).activePath),
       )
       void vscode.window.showInformationMessage('Uninstall command copied for Git Bash.')
+    },
+    'betterCmm.copyDaemonStopCommand': async () => {
+      await vscode.env.clipboard.writeText(
+        daemonStopCommandFor(resolveState(ownedInstallPath()).activePath),
+      )
+      void vscode.window.showInformationMessage(
+        'Daemon stop command copied. Run it in a terminal, then refresh the panel.',
+      )
+    },
+    'betterCmm.copyDaemonStopCommandBash': async () => {
+      await vscode.env.clipboard.writeText(
+        daemonStopCommandForBash(resolveState(ownedInstallPath()).activePath),
+      )
+      void vscode.window.showInformationMessage('Daemon stop command copied for Git Bash.')
     },
     'betterCmm.removeManagedBinary': async () => {
       const managed = managedBinaryPath(homedir(), process.platform)

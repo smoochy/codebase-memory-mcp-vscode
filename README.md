@@ -116,6 +116,7 @@ All commands are available from the command palette under **Codebase Memory**.
 | Settings, Open Settings                                   | The CLI settings screen, or VS Code's extension settings. |
 | View Extension Log, View Engine Logs, Clear Extension Log | Log inspection and cleanup.                               |
 | Copy Uninstall Command (PowerShell or Git Bash)           | Put the CLI's uninstall command on the clipboard.         |
+| Copy Daemon Stop Command (PowerShell or Git Bash)         | Put `daemon stop` on the clipboard, bound to the binary.  |
 | Copy Binary Folder                                        | Copy the resolved binary directory.                       |
 | Remove Managed Binary                                     | Delete a binary this extension installed.                 |
 

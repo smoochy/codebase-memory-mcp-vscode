@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- The notice about a daemon that survived an update now offers the `daemon stop` line as a copyable command row instead of quoting it inside the prose: PowerShell and, where it is installed, Git Bash, each with its own Copy button. The line is bound to the resolved binary, as the uninstall line already is, so a managed install that is not on `PATH` still yields something that runs.
+
 ## [1.0.3]
 
 - Documentation only; the extension itself is byte-for-byte what 1.0.2 shipped. A marketplace listing renders the README that was inside the `.vsix` at publish time rather than the one on GitHub, so a README that only lands on `main` never reaches either listing. This version exists to carry one there.

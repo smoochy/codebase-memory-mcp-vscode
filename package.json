@@ -135,6 +135,16 @@
         "category": "Codebase Memory"
       },
       {
+        "command": "betterCmm.copyDaemonStopCommand",
+        "title": "Copy Daemon Stop Command",
+        "category": "Codebase Memory"
+      },
+      {
+        "command": "betterCmm.copyDaemonStopCommandBash",
+        "title": "Copy Daemon Stop Command (Git Bash)",
+        "category": "Codebase Memory"
+      },
+      {
         "command": "betterCmm.removeManagedBinary",
         "title": "Remove Managed Binary",
         "category": "Codebase Memory"
