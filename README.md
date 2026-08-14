@@ -34,7 +34,7 @@ If this project saves you time or helps your setup, you can support ongoing main
 
 `codebase-memory-mcp` is a CLI that indexes repositories into a code knowledge graph and serves it to agents over MCP. Running it well means keeping a binary current, keeping its MCP registration valid on every machine, and knowing which repositories are indexed and how stale they are. That work is normally done by hand in a terminal.
 
-This extension moves that operational surface into VS Code. It is an independent, clean-room TypeScript implementation. It is **not affiliated with** the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
+This extension moves that operational surface into VS Code. It is an independent, clean-room TypeScript implementation. It is **not affiliated with**, but inspired by the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
 
 ## Screenshots
 
