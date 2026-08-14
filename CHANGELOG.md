@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.3]
+
+- Documentation only; the extension itself is byte-for-byte what 1.0.2 shipped. A marketplace listing renders the README that was inside the `.vsix` at publish time rather than the one on GitHub, so a README that only lands on `main` never reaches either listing. This version exists to carry one there.
+- The listing now shows the panel, the engine settings screen and the extension settings. Both marketplaces refuse to resolve a relative image path, so the screenshots are referenced by absolute URL and left out of the package rather than shipped inside it.
+- The README follows [standard-readme](https://github.com/RichardLitt/standard-readme) and gained a table of the contributed commands. Two badges were wrong rather than out of date: the CI badge named `ci.yml` while the workflow file is `ci.yaml`, and the version badge read `retired badge` because shields.io has withdrawn every Visual Studio Marketplace endpoint. The version is now carried by the Open VSX badge, which still resolves, and the Marketplace badge is a plain link.
+
 ## [1.0.2]
 
 - First published release, on the VS Code Marketplace and on Open VSX. Nothing about the extension changes here: this is the version that ships rather than a version that adds anything, and everything it does arrived over the 0.9.x line below.

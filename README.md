@@ -25,6 +25,7 @@ If this project saves you time or helps your setup, you can support ongoing main
   - [Settings](#settings)
   - [Commands](#commands)
   - [Development](#development)
+  - [Transparency](#transparency)
   - [Maintainers](#maintainers)
   - [Contributing](#contributing)
   - [License](#license)
@@ -33,7 +34,7 @@ If this project saves you time or helps your setup, you can support ongoing main
 
 `codebase-memory-mcp` is a CLI that indexes repositories into a code knowledge graph and serves it to agents over MCP. Running it well means keeping a binary current, keeping its MCP registration valid on every machine, and knowing which repositories are indexed and how stale they are. That work is normally done by hand in a terminal.
 
-This extension moves that operational surface into VS Code. It is an independent, clean-room TypeScript implementation. It is **not affiliated with** the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
+This extension moves that operational surface into VS Code. It is an independent, clean-room TypeScript implementation. It is **not affiliated with**, but inspired by the `tunakite03.codebase-memory-mcp` extension, and it is not a fork of the upstream CLI.
 
 ## Screenshots
 
@@ -137,6 +138,10 @@ uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').w
 ```
 
 `docs/MANUAL-TESTING.md` holds the manual checklist for the paths a headless suite cannot reach. `CHANGELOG.md` records every released version.
+
+## Transparency
+
+The code, documentation, and related project materials in this repository were created and refined with AI assistance, using Claude Code. All generated output was reviewed and adapted before publication. Beyond the automated suites named above, every release that changes behaviour is additionally exercised by hand against a real editor, following the checklist in [docs/MANUAL-TESTING.md](docs/MANUAL-TESTING.md) - it covers the install, update, reindex and uninstall paths a headless suite cannot reach. That document records which build each sign-off was run against, including the releases it deliberately does not cover.
 
 ## Maintainers
 

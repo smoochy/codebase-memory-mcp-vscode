@@ -2,9 +2,11 @@
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-418 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+417 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
 
 ## Sign-off
+
+**1.0.3 carries no re-run, and does not need one.** It is a documentation release: the packaged extension is what 1.0.2 shipped, and the only difference inside the `.vsix` is the README the marketplaces render. A listing shows the README that was packaged with it rather than the one on GitHub, which is why a doc change needs a version at all. Nothing below is exercised by it, so the sign-offs already recorded here continue to speak for the shipped code.
 
 Every row below was run against `better-codebase-memory-mcp-0.9.13.vsix` in a scratch profile and passed, on Windows 11 on 2026-08-09 and 2026-08-10 and on macOS on 2026-08-10. Row 13 was run on both platforms; the Linux clipboard variant is still open, and Linux is not a release target for this iteration.
 
