@@ -141,7 +141,7 @@ uv run --with resvg-py python -c "import resvg_py; open('media/icon.png','wb').w
 
 ## Transparency
 
-The code, documentation, and related project materials in this repository were created and refined with AI assistance, using Claude Code. All generated output was reviewed and adapted before publication. Beyond the automated suites named above, every release is additionally exercised by hand against a real editor, following the checklist in [docs/MANUAL-TESTING.md](docs/MANUAL-TESTING.md) - it covers the install, update, reindex and uninstall paths a headless suite cannot reach.
+The code, documentation, and related project materials in this repository were created and refined with AI assistance, using Claude Code. All generated output was reviewed and adapted before publication. Beyond the automated suites named above, every release that changes behaviour is additionally exercised by hand against a real editor, following the checklist in [docs/MANUAL-TESTING.md](docs/MANUAL-TESTING.md) - it covers the install, update, reindex and uninstall paths a headless suite cannot reach. That document records which build each sign-off was run against, including the releases it deliberately does not cover.
 
 ## Maintainers
 
