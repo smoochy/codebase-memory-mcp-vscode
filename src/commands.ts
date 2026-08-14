@@ -18,4 +18,6 @@ export const COMMAND_IDS = [
   'betterCmm.setCliSetting',
   'betterCmm.copyUninstallCommandBash',
   'betterCmm.removeManagedBinary',
+  'betterCmm.copyDaemonStopCommand',
+  'betterCmm.copyDaemonStopCommandBash',
 ] as const

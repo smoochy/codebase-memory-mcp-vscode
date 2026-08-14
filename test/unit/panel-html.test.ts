@@ -633,8 +633,30 @@ describe('renderBody', () => {
   describe('a daemon that survived an update', () => {
     it('names the command that retires it, and what the stop reported', () => {
       const html = renderBody(model({ daemonStopFailure: 'refused' }), 'n1')
-      assert.match(html, /codebase-memory-mcp daemon stop/)
+      assert.match(html, /daemon stop/)
       assert.match(html, /refused/)
+    })
+
+    // Typing the line by hand is where it goes wrong, and a managed install is
+    // not on PATH, so the offered line has to carry the binary itself.
+    it('offers the command bound to the binary, with a copy button', () => {
+      const html = renderBody(
+        model({ daemonStopFailure: 'refused', platform: 'win32', gitBashAvailable: true }),
+        'n1',
+      )
+      assert.match(html, /&amp; &quot;[^&]+&quot; daemon stop/)
+      assert.match(html, /<code>&quot;[^&]+&quot; daemon stop<\/code>/)
+      assert.match(html, /data-command="betterCmm\.copyDaemonStopCommand"/)
+      assert.match(html, /data-command="betterCmm\.copyDaemonStopCommandBash"/)
+    })
+
+    // No Git Bash on the machine means a line nobody can run, so it is absent.
+    it('omits the Git Bash line when there is no Git Bash', () => {
+      const html = renderBody(
+        model({ daemonStopFailure: 'refused', platform: 'win32', gitBashAvailable: false }),
+        'n1',
+      )
+      assert.doesNotMatch(html, /copyDaemonStopCommandBash/)
     })
 
     it('says nothing when the stop succeeded', () => {

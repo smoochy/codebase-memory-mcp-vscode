@@ -1,5 +1,10 @@
 import { releaseNotesUrlOrNull, upstreamRepoUrl } from '../binary/assets'
-import { uninstallCommandFor, uninstallCommandForBash } from '../constants'
+import {
+  daemonStopCommandFor,
+  daemonStopCommandForBash,
+  uninstallCommandFor,
+  uninstallCommandForBash,
+} from '../constants'
 import type { ProjectSummary } from '../cli/client'
 import { optionsFromDescription, type CliSetting } from '../cli/configParse'
 import { mayModifyBinary, type ExtensionState } from '../state/machine'
@@ -644,6 +649,32 @@ function commandLine(label: string, command: string, copyCommand: string): strin
   )
 }
 
+/** The `daemon stop` line, in every shell spelling the platform can run. */
+function daemonStopLines(model: PanelModel): string {
+  const active = model.state.activePath
+  if (model.platform !== 'win32') {
+    return commandLine(
+      'Terminal',
+      daemonStopCommandFor(active, 'linux'),
+      'betterCmm.copyDaemonStopCommand',
+    )
+  }
+  return (
+    commandLine(
+      'PowerShell',
+      daemonStopCommandFor(active, 'win32'),
+      'betterCmm.copyDaemonStopCommand',
+    ) +
+    (model.gitBashAvailable === true
+      ? commandLine(
+          'Git Bash',
+          daemonStopCommandForBash(active),
+          'betterCmm.copyDaemonStopCommandBash',
+        )
+      : '')
+  )
+}
+
 /**
  * The uninstall block, rendered inside the settings screen.
  *
@@ -838,10 +869,15 @@ export function renderBody(model: PanelModel, nonce: string): string {
       notice(
         'warning',
         'The new binary is installed, but the engine left running by the old one could not be ' +
-          'stopped, and it refuses calls from a different version. Run "codebase-memory-mcp ' +
-          'daemon stop" in a terminal; the panel clears this once a call gets through. ' +
+          'stopped, and it refuses calls from a different version. Run the command below in a ' +
+          'terminal; the panel clears this once a call gets through. ' +
           `It reported: ${model.daemonStopFailure}`,
       ),
+      // Typing the line by hand is the one step the notice used to leave to the
+      // user, and it is the step that has to be exact. Same rows as the
+      // uninstall block, bound to the same binary, so a managed install that is
+      // not on PATH still yields a line that runs.
+      daemonStopLines(model),
     )
   }
 
