@@ -2,9 +2,11 @@
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-417 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+419 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
 
 ## Sign-off
+
+**1.1.0 needs row 13 re-run, and nothing else.** It adds the `daemon stop` command rows to the survived-daemon notice, which is row 13's subject in a second place: the copied string has to be the resolved binary in both shell spellings, and the notice itself only appears after an update across a running 0.10.x daemon, which is row 17. Everything else in the panel is untouched, so the sign-offs below continue to speak for it.
 
 **1.0.3 carries no re-run, and does not need one.** It is a documentation release: the packaged extension is what 1.0.2 shipped, and the only difference inside the `.vsix` is the README the marketplaces render. A listing shows the README that was packaged with it rather than the one on GitHub, which is why a doc change needs a version at all. Nothing below is exercised by it, so the sign-offs already recorded here continue to speak for the shipped code.
 
@@ -68,7 +70,7 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking |
 | 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important |
-| 13 | Clipboard | Run the copy-uninstall commands on Windows, macOS, Linux | Correct string in the clipboard on each | Important |
+| 13 | Clipboard | Run the copy-uninstall and copy-daemon-stop commands on Windows, macOS, Linux | Correct string in the clipboard on each, and the pasted line runs in the shell it is labelled for | Important |
 
 **#4, #5, #6 and #7 are the requirements you set personally** - the workspace must never be touched, and an installation the extension does not own must never be written to. Worth checking first.
 

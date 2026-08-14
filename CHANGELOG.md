@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0]
 
 - The notice about a daemon that survived an update now offers the `daemon stop` line as a copyable command row instead of quoting it inside the prose: PowerShell and, where it is installed, Git Bash, each with its own Copy button. The line is bound to the resolved binary, as the uninstall line already is, so a managed install that is not on `PATH` still yields something that runs.
 
