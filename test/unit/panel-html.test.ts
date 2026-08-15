@@ -668,6 +668,29 @@ describe('renderBody', () => {
       const html = renderBody(model({ daemonStopFailure: XSS_PAYLOAD }), 'n1')
       assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
     })
+
+    // The pids the engine reports are not something the user acts on: every one
+    // of them is another `codebase-memory-mcp` an agent started as its MCP
+    // server, so what has to be closed is the session, not the process. Without
+    // this line the panel asks for a command that cannot succeed yet.
+    it('says a connected client is holding it, when that is the reason', () => {
+      const html = renderBody(
+        model({
+          daemonStopFailure:
+            'daemon: NOT stopped - 1 committed client(s) still use it.\n  - pid 28528',
+        }),
+        'n1',
+      )
+      assert.match(html, /Claude Code/)
+      assert.match(html, /Close or restart/)
+    })
+
+    // Any other reason a stop fails is not fixed by closing a session, and
+    // naming one would send the user after something that is not there.
+    it('says nothing about clients when none is blamed', () => {
+      const html = renderBody(model({ daemonStopFailure: 'permission denied' }), 'n1')
+      assert.doesNotMatch(html, /Claude Code/)
+    })
   })
 
   it('does not offer a second Refresh beside the one in the title bar', () => {

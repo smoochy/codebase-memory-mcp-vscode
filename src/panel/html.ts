@@ -650,6 +650,28 @@ function commandLine(label: string, command: string, copyCommand: string): strin
 }
 
 /** The `daemon stop` line, in every shell spelling the platform can run. */
+/**
+ * What to do about the clients the engine names, when it names any.
+ *
+ * `daemon stop` refuses while a committed client is connected, and it reports
+ * those clients as bare pids. A pid is not something the owner of the session
+ * acts on: the process behind it is always another `codebase-memory-mcp`, one
+ * an agent launched as its MCP server, so the name would say nothing either -
+ * what has to be closed is the session that launched it. Without this, the
+ * panel asks the user to run a command that cannot succeed until they do
+ * something the notice never mentions.
+ *
+ * Only added when the engine actually blames a client, because every other
+ * reason a stop fails is not fixed by closing anything.
+ */
+export function heldByClientHint(failure: string): string {
+  return /committed client/i.test(failure)
+    ? 'It is held by a client that is still connected - an agent session such as Claude Code, ' +
+        'or another editor window, that started the engine as its MCP server. Close or restart ' +
+        'that session first, or the command will keep refusing. '
+    : ''
+}
+
 function daemonStopLines(model: PanelModel): string {
   const active = model.state.activePath
   if (model.platform !== 'win32') {
@@ -871,6 +893,7 @@ export function renderBody(model: PanelModel, nonce: string): string {
         'The new binary is installed, but the engine left running by the old one could not be ' +
           'stopped, and it refuses calls from a different version. Run the command below in a ' +
           'terminal; the panel clears this once a call gets through. ' +
+          heldByClientHint(model.daemonStopFailure) +
           `It reported: ${model.daemonStopFailure}`,
       ),
       // Typing the line by hand is the one step the notice used to leave to the
