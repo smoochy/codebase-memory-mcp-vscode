@@ -505,6 +505,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // panel, because installing one goes through it.
   let lastKnownVersion: string | null = null
 
+  // The update offer as of the last refresh. Kept for the same reason as the
+  // version: a refresh paints the project list before the release lookup has
+  // run, and passing null there would blank a banner that is still true.
+  let lastUpdateAvailable: string | null = null
+
   /** Test-only counter, read through `updateChecksForTests`. */
   let updateChecks = 0
 
@@ -571,6 +576,34 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     const state = resolveState(ownedInstallPath())
     let version: string | null = null
     let updateAvailable: string | null = null
+
+    /**
+     * Hand the panel everything known right now.
+     *
+     * Called twice per refresh, because the two halves take wildly different
+     * times: listing the projects launches the CLI, which on a cold daemon runs
+     * for tens of seconds, and reading the version and looking up the release
+     * add a second launch and a network round trip behind it. Painting only at
+     * the end left the panel on its loading skeleton for the sum of all three
+     * after every window start. The first paint carries the last known version
+     * and offer rather than null, so nothing that is still true blinks out.
+     */
+    const paint = (): void => {
+      panel.update({
+        state,
+        projects,
+        version,
+        updateAvailable,
+        extensionVersion,
+        restartRequired,
+        daemonStopFailure,
+        platform: process.platform,
+        gitBashAvailable: gitBashAvailable(),
+        managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
+        absoluteTime: setting('absoluteTimestamps', false),
+        dateLocale: setting('dateLocale', ''),
+      })
+    }
 
     if (state.activePath !== null) {
       const client = new CliClient(state.activePath, runProcess)
@@ -648,6 +681,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
         await context.globalState.update(INDEX_RECORDS_KEY, records)
       }
 
+      // The list is what the panel exists to show, so it goes on screen here,
+      // before the version and release calls that nothing in it depends on.
+      version = lastKnownVersion
+      updateAvailable = lastUpdateAvailable
+      paint()
+
       const installed = await client.version()
       version = installed.ok ? installed.value : null
       lastKnownVersion = version
@@ -656,13 +695,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       // external binary is looked up too: the extension will not update it,
       // but "there is a newer one" is still worth telling its owner.
       const checkForUpdates = setting('checkForUpdates', true)
-      if (version !== null && checkForUpdates) {
-        updateAvailable = updateOffer({
-          installedVersion: version,
-          latestTag: await cachedLatestTag(),
-          checkForUpdates,
-        })
-      }
+      updateAvailable =
+        version !== null && checkForUpdates
+          ? updateOffer({
+              installedVersion: version,
+              latestTag: await cachedLatestTag(),
+              checkForUpdates,
+            })
+          : null
+      lastUpdateAvailable = updateAvailable
     }
 
     if (updateAvailable === null) {
@@ -681,20 +722,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       `refresh: ${state.kind}, source ${String(state.effectiveSource)}, ` +
         `${String(projects.length)} project(s), CLI ${version ?? 'unknown'}`,
     )
-    panel.update({
-      state,
-      projects,
-      version,
-      updateAvailable,
-      extensionVersion,
-      restartRequired,
-      daemonStopFailure,
-      platform: process.platform,
-      gitBashAvailable: gitBashAvailable(),
-      managedBinaryPresent: existsSync(managedBinaryPath(homedir(), process.platform)),
-      absoluteTime: setting('absoluteTimestamps', false),
-      dateLocale: setting('dateLocale', ''),
-    })
+    paint()
   }
 
   /**

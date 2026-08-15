@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- The project list now appears as soon as the CLI has answered, rather than after the two calls that follow it. A refresh listed the projects, then read the binary's version in a second process launch, then looked up the latest release over the network, and only then handed anything to the panel - so after a window start the panel sat on its loading skeleton for the sum of all three, which the extension log measured at 42 to 47 seconds. Painting the list first cuts the version launch and the release round trip out of that wait; the remaining time is the CLI's own cold start, which this does not touch. The first paint carries the version and update offer the last refresh read, so neither blinks out while the fresh ones are fetched.
+
 ## [1.1.0]
 
 - The notice about a daemon that survived an update now offers the `daemon stop` line as a copyable command row instead of quoting it inside the prose: PowerShell and, where it is installed, Git Bash, each with its own Copy button. The line is bound to the resolved binary, as the uninstall line already is, so a managed install that is not on `PATH` still yields something that runs.
