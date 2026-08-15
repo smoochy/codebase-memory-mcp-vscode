@@ -2,9 +2,11 @@
 
 What automation cannot reach, and therefore what a human still has to check by hand.
 
-419 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
+421 unit tests cover the pure logic: parsing, state transitions, URL and checksum handling, path resolution, wizard steps, and the download/verify/install sequence against injected stubs. Those tests spawn no processes, touch no network, and write no files. That is deliberate - but it means everything below is still unproven on real hardware.
 
 ## Sign-off
+
+**1.1.1 needs rows 1 and 17 re-run, and nothing else.** It changes when the panel paints - the project list now goes on screen as soon as the CLI answers, before the version and release lookups - so row 1 is the one that proves a first start still renders what it used to, only sooner. Row 17 covers the second change: the survived-daemon notice gained a line naming the connected client that holds the engine, which only appears after an update across a running 0.10.x daemon. Nothing else in the panel changed, so the sign-offs below continue to speak for it.
 
 **1.1.0 needs row 13 re-run, and nothing else.** It adds the `daemon stop` command rows to the survived-daemon notice, which is row 13's subject in a second place: the copied string has to be the resolved binary in both shell spellings, and the notice itself only appears after an update across a running 0.10.x daemon, which is row 17. Everything else in the panel is untouched, so the sign-offs below continue to speak for it.
 
