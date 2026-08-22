@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2]
+
+- Indexed projects no longer turn up in the Source Control view, and VS Code no longer asks to open repositories nobody opened. Stale detection reads the head commit of every project the engine holds, and it read that through the built-in git extension's `openRepository`, which does not read a repository so much as take it on: every indexed project was registered with the git extension, once per refresh, until the prompt was accepted. Measured against a store of 16 projects, the Source Control view listed all 16 rather than the one that was open. The head now comes from `git rev-parse` for every project but the workspace's own, which the git extension already has open and answers for without side effects.
+
 ## [1.1.1]
 
 - The project list now appears as soon as the CLI has answered, rather than after the two calls that follow it. A refresh listed the projects, then read the binary's version in a second process launch, then looked up the latest release over the network, and only then handed anything to the panel - so after a window start the panel sat on its loading skeleton for the sum of all three, which the extension log measured at 42 to 47 seconds. Painting the list first cuts the version launch and the release round trip out of that wait; the remaining time is the CLI's own cold start, which this does not touch. The first paint carries the version and update offer the last refresh read, so neither blinks out while the fresh ones are fetched.
