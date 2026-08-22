@@ -27,43 +27,53 @@ async function main(): Promise<void> {
       extensionDevelopmentPath,
       '.vscode-test/integration-result.json',
     )
-    rmSync(resultFile, { force: true })
+    // --no-sandbox on Linux: the CI runner images deny unprivileged user
+    // namespaces, so Electron's sandbox helper cannot start and the test host
+    // dies before it loads a single test.
+    const sandbox = process.platform === 'linux' ? ['--no-sandbox'] : []
 
-    await runTests({
-      vscodeExecutablePath: executable,
-      extensionDevelopmentPath,
-      extensionTestsPath,
-      // --no-sandbox on Linux: the CI runner images deny unprivileged user
-      // namespaces, so Electron's sandbox helper cannot start and the test
-      // host dies before it loads a single test.
-      launchArgs:
-        process.platform === 'linux'
-          ? ['--disable-extensions', '--no-sandbox']
-          : ['--disable-extensions'],
-    })
+    // Two launches, because the suites need opposite hosts. The default one
+    // keeps `--disable-extensions`, which is what makes it reproducible. The
+    // `git` suite needs the built-in git extension actually running, since the
+    // behaviour it guards - never registering an indexed project as a
+    // repository - cannot be observed while that extension is disabled.
+    const passes: { name: string; suite: string; launchArgs: string[] }[] = [
+      { name: 'integration', suite: 'default', launchArgs: ['--disable-extensions', ...sandbox] },
+      { name: 'integration (git)', suite: 'git', launchArgs: [...sandbox] },
+    ]
 
-    if (!existsSync(resultFile)) {
-      throw new Error(
-        'the test host exited without reporting a result - no tests were run',
+    for (const pass of passes) {
+      rmSync(resultFile, { force: true })
+
+      await runTests({
+        vscodeExecutablePath: executable,
+        extensionDevelopmentPath,
+        extensionTestsPath,
+        launchArgs: pass.launchArgs,
+        extensionTestsEnv: { CBM_TEST_SUITE: pass.suite },
+      })
+
+      if (!existsSync(resultFile)) {
+        throw new Error('the test host exited without reporting a result - no tests were run')
+      }
+
+      const result = JSON.parse(readFileSync(resultFile, 'utf8')) as {
+        files: number
+        passing: number
+        failing: number
+        failureMessages?: string[]
+      }
+
+      console.log(
+        `${pass.name}: ${String(result.passing)} passing, ${String(result.failing)} failing ` +
+          `(${String(result.files)} file(s))`,
       )
-    }
-
-    const result = JSON.parse(readFileSync(resultFile, 'utf8')) as {
-      files: number
-      passing: number
-      failing: number
-      failureMessages?: string[]
-    }
-
-    console.log(
-      `integration: ${String(result.passing)} passing, ${String(result.failing)} failing ` +
-        `(${String(result.files)} file(s))`,
-    )
-    for (const message of result.failureMessages ?? []) {
-      console.error(`  ${message}`)
-    }
-    if (result.failing > 0 || result.passing === 0) {
-      throw new Error('integration tests did not pass')
+      for (const message of result.failureMessages ?? []) {
+        console.error(`  ${message}`)
+      }
+      if (result.failing > 0 || result.passing === 0) {
+        throw new Error(`${pass.name} tests did not pass`)
+      }
     }
   } catch (err) {
     console.error('Integration tests failed to run', err)
