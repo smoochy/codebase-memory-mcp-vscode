@@ -52,7 +52,8 @@ interface GitRepository {
 interface GitExports {
   getAPI(version: 1): {
     getRepository(uri: vscode.Uri): GitRepository | null
-    openRepository(uri: vscode.Uri): Thenable<GitRepository | null>
+    /** Where the git extension found git; absent on older API builds. */
+    git?: { path?: string }
   }
 }
 
@@ -174,6 +175,8 @@ function resolveState(ownedInstallPath: string | null): ExtensionState {
  */
 export interface ExtensionApi {
   panelHtmlForTests?: () => string
+  /** Head reader behind stale detection. See `headCommit`. */
+  headCommitForTests?: (rootPath: string) => Promise<string | null>
   /** How often the hidden-panel update check has run. See `updateBadgeCheck`. */
   updateChecksForTests?: () => number
 }
@@ -219,33 +222,36 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
    *
    * CLI 0.10.x dropped the `git` object from `list_projects` and no other tool
    * it exposes reports a commit, so the sha that stale detection compares
-   * against comes from the checkout itself. VS Code's own git extension is the
-   * reader: it is built in, and it already resolves packed refs, detached
-   * heads, worktrees and the gitdir files submodules use - every one of which
-   * a hand-written `.git/HEAD` parser would have to get right on a path the
-   * user chose.
+   * against comes from the checkout itself. The workspace's own repository is
+   * read from the built-in git extension, which already has it open. Every
+   * other project is read by asking git itself: the extension's
+   * `openRepository` would answer too, but it registers the foreign folder as
+   * a repository, which puts indexed projects into the Source Control view and
+   * makes VS Code prompt about them over and over.
    */
   const headCommit = async (rootPath: string): Promise<string | null> => {
     const extension = vscode.extensions.getExtension<GitExports>('vscode.git')
     // Only ever read from an already-active git extension, never activated
     // here: under `--disable-extensions` the built-in one is present but
     // disabled, and awaiting its activation never returns - which hung the
-    // refresh in the integration tier rather than failing it. Nothing is lost
-    // by waiting, because a refresh runs every few seconds and the git
-    // extension activates on startup wherever there is a repository at all.
-    if (extension === undefined || !extension.isActive) {
-      return null
+    // refresh in the integration tier rather than failing it.
+    const api =
+      extension !== undefined && extension.isActive ? extension.exports.getAPI(1) : undefined
+    const opened = api?.getRepository(vscode.Uri.file(rootPath))?.state.HEAD?.commit
+    if (typeof opened === 'string' && opened.length > 0) {
+      return opened
     }
     try {
-      const api = extension.exports.getAPI(1)
-      const uri = vscode.Uri.file(rootPath)
-      // `getRepository` only answers for repositories the git extension has
-      // already opened, which is the workspace's own. A project indexed from
-      // somewhere else is opened once here and cached by that extension from
-      // then on, so this is not a per-refresh cost.
-      const repository = api.getRepository(uri) ?? (await api.openRepository(uri))
-      const commit = repository?.state.HEAD?.commit
-      return typeof commit === 'string' && commit.length > 0 ? commit : null
+      // `rev-parse` resolves packed refs, detached heads, worktrees and the
+      // gitdir files submodules use, all of which a hand-written `.git/HEAD`
+      // parser would have to get right on a path the user chose.
+      const result = await runProcess(
+        api?.git?.path ?? 'git',
+        ['-C', rootPath, 'rev-parse', 'HEAD'],
+        10_000,
+      )
+      const commit = result.code === 0 ? result.stdout.trim() : ''
+      return commit.length > 0 ? commit : null
     } catch {
       // A root that is not a repository, or has been deleted, is not an error
       // to report: it means no claim can be made about staleness, which is the
@@ -1662,6 +1668,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     ? {}
     : {
         panelHtmlForTests: () => panel.renderedHtml,
+        headCommitForTests: headCommit,
         updateChecksForTests: () => updateChecks,
       }
 }

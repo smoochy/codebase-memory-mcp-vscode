@@ -34,9 +34,15 @@ function collectTestFiles(dir: string): string[] {
 /** Entry point the VS Code test host loads (see runTest.ts). */
 export async function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'bdd', color: false, timeout: 20_000 })
-  const testsRoot = resolve(__dirname, '..')
+  // `git` holds the tests that need the built-in git extension running, so
+  // they are a separate launch without `--disable-extensions` rather than part
+  // of this one. Which set to run comes from runTest.ts.
+  const gitRoot = resolve(__dirname, '../git')
+  const testsRoot = process.env.CBM_TEST_SUITE === 'git' ? gitRoot : resolve(__dirname, '..')
 
-  const files = collectTestFiles(testsRoot)
+  const files = collectTestFiles(testsRoot).filter(
+    (file) => process.env.CBM_TEST_SUITE === 'git' || !file.startsWith(gitRoot),
+  )
   for (const file of files) {
     mocha.addFile(file)
   }
