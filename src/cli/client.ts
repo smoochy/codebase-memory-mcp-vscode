@@ -159,7 +159,15 @@ export class CliClient {
   }
 
   async listProjects(): Promise<CliResult<ProjectSummary[]>> {
-    const result = await this.json<unknown>(['cli', 'list_projects', '--json'])
+    // `--include-details=true` is not optional: CLI 0.10.8 flipped the default
+    // to false, so without it every project comes back with no branch, no
+    // node/edge counts and no size, and the panel renders "-" everywhere.
+    const result = await this.json<unknown>([
+      'cli',
+      'list_projects',
+      '--include-details=true',
+      '--json',
+    ])
     if (!result.ok) {
       return result
     }

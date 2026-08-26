@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.3]
+
+- The panel shows node, edge and size counts again, along with each project's branch. CLI 0.10.8 turned `list_projects`' details into an opt-in: `include_details` now defaults to false, so every project came back carrying nothing but its name and root path, and the panel rendered "-" for every count and for the totals across the top. The extension now asks for them with `--include-details=true`. Nothing about the engine or the index was wrong here, which is why a reindex changed the log without ever changing the numbers.
+
 ## [1.1.2]
 
 - Indexed projects no longer turn up in the Source Control view, and VS Code no longer asks to open repositories nobody opened. Stale detection reads the head commit of every project the engine holds, and it read that through the built-in git extension's `openRepository`, which does not read a repository so much as take it on: every indexed project was registered with the git extension, once per refresh, until the prompt was accepted. Measured against a store of 16 projects, the Source Control view listed all 16 rather than the one that was open. The head now comes from `git rev-parse` for every project but the workspace's own, which the git extension already has open and answers for without side effects.
