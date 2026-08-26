@@ -155,7 +155,12 @@ describe('CliClient', () => {
     const calls: Array<{ command: string; args: string[] }> = []
     await new CliClient(BIN, stubRunner({ stdout: '{"projects":[]}' }, calls)).listProjects()
     assert.equal(calls[0]?.command, BIN)
-    assert.deepEqual(calls[0]?.args, ['cli', 'list_projects', '--json'])
+    assert.deepEqual(calls[0]?.args, [
+      'cli',
+      'list_projects',
+      '--include-details=true',
+      '--json',
+    ])
   })
 
   it('normalizes a Windows path before adding a project', async () => {
