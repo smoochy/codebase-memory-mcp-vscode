@@ -60,6 +60,27 @@ jobs:
       - run: npm ci
       - run: npm run test:package
 
+  # A version bump is the only thing that starts a release, so it is the one
+  # thing a pull request cannot get wrong unnoticed. The script exits silently
+  # unless the manifest is above the newest tag, which is why this job has no
+  # `paths:` filter: a required check that only reports on some pull requests
+  # blocks every other one forever.
+  version-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The commit range runs from the newest `v*` tag, so both the whole
+          # history and the tags have to be here.
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: node scripts/check-version-bump.mjs
+
   # Both operating systems, because the extension carries real Windows-specific
   # branches (shell selection, profile paths, the Git Bash uninstall command)
   # that no other tier exercises.
