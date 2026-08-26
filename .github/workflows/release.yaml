@@ -1,18 +1,29 @@
 name: release
 
-# A pushed `v*` tag is the only trigger. Merging to main never publishes: a
-# marketplace version cannot be withdrawn once accepted, so cutting a release
-# stays an explicit, separate act.
+# A pushed `v*` tag is the trigger, and a caller that has just created such a
+# tag can reach the same jobs through `workflow_call`. A tag pushed with the
+# default `GITHUB_TOKEN` starts no workflow run of its own, so calling this
+# workflow in the same run is the only way an automated tag reaches a release
+# without a new credential.
 on:
   push:
     tags:
       - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: The `v*` tag to release. Must already exist.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+# `inputs.tag` is empty on the tag-push path, so this keys off the tag either
+# way. `env` is not available in a workflow-level `concurrency`, hence the
+# expression rather than the `TAG` variable the jobs use.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -24,6 +35,11 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      # The one place the trigger shape is resolved: every later step reads
+      # `$TAG` and never `GITHUB_REF_NAME`, which points at the caller's branch
+      # rather than the tag when this workflow is called.
+      TAG: ${{ inputs.tag || github.ref_name }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -35,7 +51,9 @@ jobs:
       # A tag can point at any commit, including one no pull request ever
       # reviewed and no CI run ever saw. Requiring the tagged commit to be an
       # ancestor of main is what makes the CI workflow a real gate here,
-      # without re-running the test tiers on every tag.
+      # without re-running the test tiers on every tag. On the called path the
+      # checked-out commit is main itself, so the guard is trivially true
+      # there; it stays because the tag-push path is the one it protects.
       - name: Require the tag to sit on main
         run: |
           git fetch --no-tags origin main
@@ -52,10 +70,10 @@ jobs:
       - name: Check the tag against the manifest
         id: version
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
+          tag_version="${TAG#v}"
           manifest_version="$(node -p "require('./package.json').version")"
           if [ "$tag_version" != "$manifest_version" ]; then
-            echo "tag $GITHUB_REF_NAME does not match package.json version $manifest_version" >&2
+            echo "tag $TAG does not match package.json version $manifest_version" >&2
             exit 1
           fi
           echo "version=$tag_version" >> "$GITHUB_OUTPUT"
@@ -84,10 +102,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '\.vsix$'; then
-            echo "release $GITHUB_REF_NAME already carries its asset"
+          if gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '\.vsix$'; then
+            echo "release $TAG already carries its asset"
           else
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md ./*.vsix
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md ./*.vsix
           fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
