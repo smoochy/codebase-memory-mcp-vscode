@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.3]
 
 - The panel shows node, edge and size counts again, along with each project's branch. CLI 0.10.8 turned `list_projects`' details into an opt-in: `include_details` now defaults to false, so every project came back carrying nothing but its name and root path, and the panel rendered "-" for every count and for the totals across the top. The extension now asks for them with `--include-details=true`. Nothing about the engine or the index was wrong here, which is why a reindex changed the log without ever changing the numbers.
 
