@@ -1,0 +1,75 @@
+name: release-on-merge
+
+# Turns a merge that bumps the manifest into a released version, so a release
+# needs no hand-pushed tag and no local step. Every other merge - docs, chore,
+# Renovate - lands on the no-op branch and does nothing.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Two merges landing seconds apart would otherwise race on `gh release create`,
+# and cancelling a run that had published to one registry but not the other
+# would leave a split release. The per-registry "already published" guards in
+# `release.yaml` are what make a serialized re-run safe.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  # Decides, and tags. The tag is pushed *before* the release is called: a tag
+  # with no release is recoverable by re-running the run, whereas a publish with
+  # no tag would leave the next push to main seeing no tag and releasing the
+  # same version a second time.
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      # The credential stays on the checkout here, unlike everywhere in
+      # `release.yaml`: this is the one job in the repository that pushes.
+      # `fetch-depth: 0` with tags is what makes the tag list answer anything.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Decide whether this merge is a release
+        id: decide
+        run: node scripts/decide-release.mjs
+
+      # A tag pushed with the default `GITHUB_TOKEN` starts no workflow run of
+      # its own, which is why the release job below calls `release.yaml`
+      # directly rather than relying on this push.
+      - name: Tag the release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+  # The same workflow a hand-pushed tag reaches, entered in this run. Its
+  # `publish` job still sits behind the `release` environment review, so the
+  # marketplace uploads remain a human decision.
+  release:
+    needs: tag
+    if: needs.tag.outputs.release == 'true'
+    uses: ./.github/workflows/release.yaml
+    # A called workflow can only narrow what the caller grants, so the `build`
+    # job's own `contents: write` would be cut back to the read at the top of
+    # this file and `gh release create` would fail.
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
