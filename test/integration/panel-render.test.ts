@@ -89,7 +89,9 @@ describe('panel renders in a real extension host', () => {
 
   // Executing each one proves the handler runs. A handler that throws is
   // indistinguishable from a dead button in the UI. Commands that open a modal
-  // dialog (addProject, removeProject) are excluded - they would block here.
+  // dialog (addProject, removeProject) stay excluded here, because this loop
+  // installs no dialog stub and the modal would block the host forever. They
+  // are covered in modal-actions.test.ts, which answers the dialog first.
   //
   // The bounds are not one shared number, because these commands do not await
   // the same amount of real work. A refresh awaits one `list_projects`, whose
