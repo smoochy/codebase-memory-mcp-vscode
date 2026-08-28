@@ -132,7 +132,7 @@ for (const stage of stages) {
 // carries its own verdict. Rolling them into one stage would mean a failure in
 // the `default` suite leaves the `git` suite reported as nothing at all -
 // indistinguishable from a suite that passed.
-const suites = ['default', 'git']
+const suites = ['default', 'git', 'workspace']
 
 if (halted) {
   for (const suite of suites) {
