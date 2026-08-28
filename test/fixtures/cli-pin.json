@@ -1,0 +1,63 @@
+{
+  "_comment": "Pinned CLI releases the autotest run downloads and verifies. Bumped BY HAND ONLY: an agent that raises a pin because a test went red turns a real upstream regression into a green run. The unattended loop denies this path explicitly, on top of the git diff check in its round wrap-up. Hashes come from the checksums.txt published with each release of DeusData/codebase-memory-mcp.",
+  "entries": {
+    "current": {
+      "tag": "v0.10.8",
+      "assets": {
+        "win32-x64": {
+          "asset": "codebase-memory-mcp-windows-amd64.zip",
+          "sha256": "b43ad982994c4d829670749e08d3b622a74bb20041fc0a7d02bef6113f81c34d"
+        },
+        "win32-arm64": {
+          "asset": "codebase-memory-mcp-windows-arm64.zip",
+          "sha256": "254b26e819f00bab7f430c5f809d37d22b07bb3eb6427e290e5a27ba5b8e983e"
+        },
+        "darwin-x64": {
+          "asset": "codebase-memory-mcp-darwin-amd64.tar.gz",
+          "sha256": "2b193085410af3801634a522f4b17dcd6699695e015a068393c87817c1d260d4"
+        },
+        "darwin-arm64": {
+          "asset": "codebase-memory-mcp-darwin-arm64.tar.gz",
+          "sha256": "9bd840dfb3ec7eaef4f310382057adaa5b0e904df883104d03ffcf39836afd07"
+        },
+        "linux-x64": {
+          "asset": "codebase-memory-mcp-linux-amd64.tar.gz",
+          "sha256": "e5cba4cad6ca8254a85f45041fc8a831908d7d5cb64f98fc3f8eb70a58671793"
+        },
+        "linux-arm64": {
+          "asset": "codebase-memory-mcp-linux-arm64.tar.gz",
+          "sha256": "e2804a20f5a6fc392af361525a232703e351b7d1aacb81b88eef806eec5959fa"
+        }
+      }
+    },
+    "old": {
+      "tag": "v0.10.0",
+      "assets": {
+        "win32-x64": {
+          "asset": "codebase-memory-mcp-windows-amd64.zip",
+          "sha256": "f8a50d2baad94ea2c1ef8c045452a0ef35974e0b03e95e75fb42fea743ab86ef"
+        },
+        "win32-arm64": {
+          "asset": "codebase-memory-mcp-windows-arm64.zip",
+          "sha256": "925abf7cb23d82130bd1c52eb7c4801f1aee4d824f28d03a69897b7d54dd0a54"
+        },
+        "darwin-x64": {
+          "asset": "codebase-memory-mcp-darwin-amd64.tar.gz",
+          "sha256": "1efcb2096a21e76a090a2c2c1b103fc705f0445f7107df7ca9bead4eab130f5d"
+        },
+        "darwin-arm64": {
+          "asset": "codebase-memory-mcp-darwin-arm64.tar.gz",
+          "sha256": "0e559ee1c1170a2925e72e6752d527ff66785ab17efb55efecb225c9a6babc21"
+        },
+        "linux-x64": {
+          "asset": "codebase-memory-mcp-linux-amd64.tar.gz",
+          "sha256": "ef5ca5c8ded02f700d90b04444bc0cb67d0e9508831ab44c1a4ede02f1fa189c"
+        },
+        "linux-arm64": {
+          "asset": "codebase-memory-mcp-linux-arm64.tar.gz",
+          "sha256": "d8215279e3e46a65b83e382e26ae87392649aa56f4360dbfba7b9453eddb6b35"
+        }
+      }
+    }
+  }
+}
