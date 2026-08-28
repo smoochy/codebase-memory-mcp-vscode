@@ -51,8 +51,19 @@ function exec(command, args, env = {}) {
 const units = []
 
 function record(id, status, detail, output = '') {
-  units.push({ id, status, detail, output: output.slice(-4000) })
+  const captured = output.slice(-4000)
+  units.push({ id, status, detail, output: captured })
   console.log(`${status.toUpperCase().padEnd(8)} ${id}${detail ? ` - ${detail}` : ''}`)
+  // A unit that did not pass has to say why in the log too, not only in the
+  // JSON record. The report is a file, and a file can fail to reach the reader
+  // - an artifact upload that drops it leaves the log as the only account of
+  // the run, and a log that names a failure without its output cannot be
+  // diagnosed at all.
+  if (status !== 'pass' && status !== 'skipped' && captured) {
+    for (const line of captured.split('\n')) {
+      console.log(`  | ${line}`)
+    }
+  }
 }
 
 // The stages, in order. `build` and `compile:test` are the only hard stops:

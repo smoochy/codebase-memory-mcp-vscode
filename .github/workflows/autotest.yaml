@@ -64,3 +64,7 @@ jobs:
           name: autotest-${{ matrix.os }}
           path: .autotest/
           if-no-files-found: error
+          # The reports live under a dot directory, which the action treats as
+          # hidden and skips by default - so every run uploaded nothing and
+          # failed on if-no-files-found, including the runs that passed.
+          include-hidden-files: true
