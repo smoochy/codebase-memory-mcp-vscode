@@ -6,6 +6,8 @@
 
 - A failing unit now prints its captured output into the run log, not only into the JSON record, and the `autotest` workflow uploads its reports again. The reports live under a dot directory, which `upload-artifact` treats as hidden and skips, so every run - including the ones where every stage passed - uploaded nothing and then failed on `if-no-files-found`. Between the two, a failure on a CI runner left no account of itself anywhere: no artifact, and a log naming the failing stage without a line of its output.
 
+- The unattended pass runs its integration suites on macOS. Electron opens a unix domain socket inside the profile it is given, a unix socket path may not exceed 103 bytes on macOS, and the runner's per-user temp directory spends 49 of those before the profile name is added - so the host failed to listen with `EINVAL` and exited before a single test ran. The profile directory is now named by a short hash of the run id, and on macOS it sits under `/tmp`.
+
 ## [1.1.3]
 
 - The panel shows node, edge and size counts again, along with each project's branch. CLI 0.10.8 turned `list_projects`' details into an opt-in: `include_details` now defaults to false, so every project came back carrying nothing but its name and root path, and the panel rendered "-" for every count and for the totals across the top. The extension now asks for them with `--include-details=true`. Nothing about the engine or the index was wrong here, which is why a reindex changed the log without ever changing the numbers.
