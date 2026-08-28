@@ -47,14 +47,7 @@ The extension log twice recorded `listing projects failed: CLI exited with 1` in
 
 These need a real GitHub release, real network conditions, or a real MCP client.
 
-| # | Area | What to do | Expected | Priority | Status |
-|---|---|---|---|---|---|
-| 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking | unrun |
-| 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking | human |
-| 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking | human |
-| 8 | Provided MCP server | After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage` | "Codebase Memory" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install` | Blocking | automated - `extension activation contributes an MCP server definition provider the host supports` |
-| 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking | unrun |
-| 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking | unrun |
+<!-- generated:rows:A -->
 
 **Why these matter most.** #2, #3 and #11 exercise the code that writes an executable to disk. The unit tests prove a checksum mismatch aborts without writing, but only a real run proves the same on a genuine interrupted download.
 
@@ -64,19 +57,7 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 
 The logic is unit-tested; what is untested is whether the extension wires it to the real VS Code API correctly.
 
-| # | Area | What to do | Expected | Priority | Status |
-|---|---|---|---|---|---|
-| 4 | External binary | Set `binarySource` to `external`, point at your own install | No update button, no install button, panel still lists projects | Blocking | unrun |
-| 5 | Workspace | Open a repository, look at the project list | Workspace is **not** listed as a project by itself | Blocking | automated - `an open repository is not treated as a project does not render the open folder as a project card` |
-| 6 | Add repositories | Add several folders at once | All indexed, `workspaceFolders` unchanged, no folder added to the workspace | Blocking | automated - `commands behind a modal dialog opens a folder picker for add repositories, and a dismissal is a no-op` |
-| 7 | Remove project | Remove a project | Confirmation mentions the index only, never the workspace | Blocking | automated - `commands behind a modal dialog names the project in the confirmation, and a dismissal never reaches the CLI` |
-| 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important | automated - `removes our own entry and leaves every other server in place` |
-| 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking | human |
-| 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking | human |
-| 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking | unrun |
-| 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important | unrun |
-| 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important | human - part covered by `extension activation copies a runnable betterCmm.copyUninstallCommand string for this platform` |
-| 13 | Clipboard | Run the copy-uninstall and copy-daemon-stop commands on Windows, macOS, Linux | Correct string in the clipboard on each, and the pasted line runs in the shell it is labelled for | Important | human - part covered by `extension activation copies a runnable betterCmm.copyDaemonStopCommand string for this platform` |
+<!-- generated:rows:B -->
 
 **#4, #5, #6 and #7 are the requirements you set personally** - the workspace must never be touched, and an installation the extension does not own must never be written to. Worth checking first.
 
@@ -84,11 +65,7 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 
 ## C. Visual and performance - human judgement only
 
-| # | Area | What to do | Expected | Priority | Status |
-|---|---|---|---|---|---|
-| 14 | Panel appearance | Switch light, dark, high contrast themes | Readable, no unstyled flash, no horizontal scrollbar | Important | human |
-| 15 | Large project | Index a repository with >10,000 files | Panel responsive, statistics update, no editor freeze | Important | human |
-| 16 | Idle cost | Leave VS Code open with the panel hidden for an hour | No CLI processes spawned while hidden | Nice to have | automated - `idle cost with the panel hidden launches no CLI while the panel is hidden, and keeps ticking` |
+<!-- generated:rows:C -->
 
 ---
 
@@ -98,28 +75,7 @@ The rows a release still needs a person for, generated from the registry rather 
 
 Rows with the status `unrun` are automatable and have no test yet. They are not residue and they do not gate a release, but a release that ships with a long unrun list is shipping less coverage than the row table suggests.
 
-### Must be run
-
-- [ ] **A2** Download (Blocking) - A real download to a real path with a real checksum.
-- [ ] **A3** Offline (Blocking) - Needs the network stack actually down; the harness has no network isolation control.
-- [ ] **B14** Two machines, Settings Sync on (Blocking) - Inherently cross-machine and live, and easy to run in a way that measures nothing if the two profiles never actually sync.
-- [ ] **B15** Changed binary (Blocking) - `vscode.lm.mcpServerDefinitions` is behind an API proposal and throws when read, so the row is human as specified.
-
-### May be skipped with a recorded sign-off
-
-- [ ] **B12** Uninstall (Important) - The no-terminal half is automated; README discoverability is the human half.
-- [ ] **B13** Clipboard (Important) - The clipboard contents are automated per OS; that the pasted line actually runs in the shell it is labelled for is the human half - the bug class this row has already found twice.
-- [ ] **C14** Panel appearance (Important) - `panelHtmlForTests()` returns HTML, not layout metrics.
-- [ ] **C15** Large project (Important) - The indexing half is bounded by the 240 s assertion in `panel-render.test.ts` - 12,000 files added 21 s, a real 17-project reindex took 77.6 s. Responsiveness itself stays human: the bound measures a command, not the UI.
-
-### Automatable, no test yet
-
-- A1 First start - Automatable as its own launch against an installed build, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there.
-- A10 Update - Probed green against the pinned `old` binary; becoming a permanent test.
-- A11 Windows rollback - Probed green with a `FileShare.Read` handle on the target; becoming a permanent test.
-- B4 External binary - Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle.
-- B17 Update across the daemon - Probed green across a running old daemon; becoming a permanent test.
-- B18 Branch and staleness on 0.10.x - Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary.
+<!-- generated:release-checklist -->
 
 ---
 

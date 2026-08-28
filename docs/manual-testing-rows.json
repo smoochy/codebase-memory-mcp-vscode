@@ -1,0 +1,210 @@
+{
+  "$comment": "The single source of truth for the manual-testing checklist. docs/MANUAL-TESTING.md is generated from this file plus docs/MANUAL-TESTING.template.md; scripts/check-rows.mjs fails when the two disagree. A row is identified by section plus number - 14 and 15 each appear in two sections. status: automated (a test covers it), human (only a person can answer it), unrun (automatable, no test yet). A row whose automatable half is covered while the row as a whole still needs a person stays human and says so in `note`; `test` may still name what covers that half. `test` is a full mocha title; `tier` says where it is checked - \"integration\" (the default) means the title has to appear as a passing test in the run's own result files, \"unit\" means it is checked against the sources under test/unit, since the unit tier writes no result file.",
+  "rows": [
+    {
+      "section": "A",
+      "number": 1,
+      "area": "First start",
+      "task": "Install the `.vsix` in a clean profile, open the panel",
+      "expected": "Setup prompt appears, no error notification",
+      "priority": "Blocking",
+      "status": "unrun",
+      "note": "Automatable as its own launch against an installed build, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there."
+    },
+    {
+      "section": "A",
+      "number": 2,
+      "area": "Download",
+      "task": "Run setup, choose `managed`",
+      "expected": "Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads \"Installing...\" past 90",
+      "priority": "Blocking",
+      "status": "human",
+      "note": "A real download to a real path with a real checksum."
+    },
+    {
+      "section": "A",
+      "number": 3,
+      "area": "Offline",
+      "task": "Disable the network, run setup",
+      "expected": "Clear error message, **no half-written binary left behind**",
+      "priority": "Blocking",
+      "status": "human",
+      "note": "Needs the network stack actually down; the harness has no network isolation control."
+    },
+    {
+      "section": "A",
+      "number": 8,
+      "area": "Provided MCP server",
+      "task": "After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage`",
+      "expected": "\"Codebase Memory\" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install`",
+      "priority": "Blocking",
+      "status": "automated",
+      "test": "extension activation contributes an MCP server definition provider the host supports",
+      "note": "The `mcp.json` half is covered at the unit tier by `withoutMcpEntry`; the contribution point is covered here."
+    },
+    {
+      "section": "A",
+      "number": 10,
+      "area": "Update",
+      "task": "With an older managed binary, restart",
+      "expected": "Update offer appears and applies; Windows update succeeds while the server runs",
+      "priority": "Blocking",
+      "status": "unrun",
+      "note": "Probed green against the pinned `old` binary; becoming a permanent test."
+    },
+    {
+      "section": "A",
+      "number": 11,
+      "area": "Windows rollback",
+      "task": "Lock the target file, then update",
+      "expected": "Old binary restored, error explains where the backup is",
+      "priority": "Blocking",
+      "status": "unrun",
+      "note": "Probed green with a `FileShare.Read` handle on the target; becoming a permanent test."
+    },
+    {
+      "section": "B",
+      "number": 4,
+      "area": "External binary",
+      "task": "Set `binarySource` to `external`, point at your own install",
+      "expected": "No update button, no install button, panel still lists projects",
+      "priority": "Blocking",
+      "status": "unrun",
+      "note": "Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle."
+    },
+    {
+      "section": "B",
+      "number": 5,
+      "area": "Workspace",
+      "task": "Open a repository, look at the project list",
+      "expected": "Workspace is **not** listed as a project by itself",
+      "priority": "Blocking",
+      "status": "automated",
+      "test": "an open repository is not treated as a project does not render the open folder as a project card"
+    },
+    {
+      "section": "B",
+      "number": 6,
+      "area": "Add repositories",
+      "task": "Add several folders at once",
+      "expected": "All indexed, `workspaceFolders` unchanged, no folder added to the workspace",
+      "priority": "Blocking",
+      "status": "automated",
+      "test": "commands behind a modal dialog opens a folder picker for add repositories, and a dismissal is a no-op"
+    },
+    {
+      "section": "B",
+      "number": 7,
+      "area": "Remove project",
+      "task": "Remove a project",
+      "expected": "Confirmation mentions the index only, never the workspace",
+      "priority": "Blocking",
+      "status": "automated",
+      "test": "commands behind a modal dialog names the project in the confirmation, and a dismissal never reaches the CLI"
+    },
+    {
+      "section": "B",
+      "number": 9,
+      "area": "Hand-written entry",
+      "task": "Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload",
+      "expected": "The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call",
+      "priority": "Important",
+      "status": "automated",
+      "test": "removes our own entry and leaves every other server in place",
+      "tier": "unit",
+      "note": "Covered at the unit tier against `withoutMcpEntry`. An integration version would be racy and vacuous: the guard only rewrites an `mcp.json` that already exists."
+    },
+    {
+      "section": "B",
+      "number": 14,
+      "area": "Two machines, Settings Sync on",
+      "task": "With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each",
+      "expected": "Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong",
+      "priority": "Blocking",
+      "status": "human",
+      "note": "Inherently cross-machine and live, and easy to run in a way that measures nothing if the two profiles never actually sync."
+    },
+    {
+      "section": "B",
+      "number": 15,
+      "area": "Changed binary",
+      "task": "Switch `binarySource`, or take an update, without reloading the window",
+      "expected": "The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload",
+      "priority": "Blocking",
+      "status": "human",
+      "note": "`vscode.lm.mcpServerDefinitions` is behind an API proposal and throws when read, so the row is human as specified."
+    },
+    {
+      "section": "B",
+      "number": 17,
+      "area": "Update across the daemon",
+      "task": "With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel",
+      "expected": "The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload",
+      "priority": "Blocking",
+      "status": "unrun",
+      "note": "Probed green across a running old daemon; becoming a permanent test."
+    },
+    {
+      "section": "B",
+      "number": 18,
+      "area": "Branch and staleness on 0.10.x",
+      "task": "Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh",
+      "expected": "The card shows the branch, and the project is reported as outdated after the checkout moves",
+      "priority": "Important",
+      "status": "unrun",
+      "note": "Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary."
+    },
+    {
+      "section": "B",
+      "number": 12,
+      "area": "Uninstall",
+      "task": "Uninstall the extension",
+      "expected": "No terminal opens; copy-command hint discoverable in the README",
+      "priority": "Important",
+      "status": "human",
+      "test": "extension activation copies a runnable betterCmm.copyUninstallCommand string for this platform",
+      "note": "The no-terminal half is automated; README discoverability is the human half."
+    },
+    {
+      "section": "B",
+      "number": 13,
+      "area": "Clipboard",
+      "task": "Run the copy-uninstall and copy-daemon-stop commands on Windows, macOS, Linux",
+      "expected": "Correct string in the clipboard on each, and the pasted line runs in the shell it is labelled for",
+      "priority": "Important",
+      "status": "human",
+      "test": "extension activation copies a runnable betterCmm.copyDaemonStopCommand string for this platform",
+      "note": "The clipboard contents are automated per OS; that the pasted line actually runs in the shell it is labelled for is the human half - the bug class this row has already found twice."
+    },
+    {
+      "section": "C",
+      "number": 14,
+      "area": "Panel appearance",
+      "task": "Switch light, dark, high contrast themes",
+      "expected": "Readable, no unstyled flash, no horizontal scrollbar",
+      "priority": "Important",
+      "status": "human",
+      "note": "`panelHtmlForTests()` returns HTML, not layout metrics."
+    },
+    {
+      "section": "C",
+      "number": 15,
+      "area": "Large project",
+      "task": "Index a repository with >10,000 files",
+      "expected": "Panel responsive, statistics update, no editor freeze",
+      "priority": "Important",
+      "status": "human",
+      "note": "The indexing half is bounded by the 240 s assertion in `panel-render.test.ts` - 12,000 files added 21 s, a real 17-project reindex took 77.6 s. Responsiveness itself stays human: the bound measures a command, not the UI."
+    },
+    {
+      "section": "C",
+      "number": 16,
+      "area": "Idle cost",
+      "task": "Leave VS Code open with the panel hidden for an hour",
+      "expected": "No CLI processes spawned while hidden",
+      "priority": "Nice to have",
+      "status": "automated",
+      "test": "idle cost with the panel hidden launches no CLI while the panel is hidden, and keeps ticking"
+    }
+  ]
+}
