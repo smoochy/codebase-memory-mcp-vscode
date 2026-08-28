@@ -19,6 +19,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  acquire,
+  classifyAcquisitionError,
+  provision,
+  readPin,
+} from './cli-fixture.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -44,6 +50,12 @@ const profileKey = createHash('sha256').update(runId).digest('hex').slice(0, 8)
 const profileDir = join(profileBase, `autotest-${profileKey}`)
 const userDataDir = join(profileDir, 'user-data')
 const extensionsDir = join(profileDir, 'extensions')
+
+// The scratch HOME is a sibling of the profile, not a child of it. The CLI puts
+// its own state under `<home>/.cache/codebase-memory-mcp`, so nesting it inside
+// the profile would spend the macOS socket-path budget above twice over on one
+// path. Same short-hash-under-/tmp shape, its own budget.
+const scratchHome = join(profileBase, `autotest-${profileKey}-home`)
 
 /** Run one command, capturing everything. Never throws. */
 function exec(command, args, env = {}) {
@@ -101,10 +113,29 @@ const stages = [
   },
 ]
 
+/**
+ * Remove a scratch directory without ever failing the run.
+ *
+ * A CLI invocation leaves a daemon behind that keeps files in the scratch home
+ * open, so removing it races that process and answers EPERM on Windows often
+ * enough to matter - and a teardown that threw would lose both the report and
+ * the exit code after every stage had already passed. Each directory is named
+ * after the run, so what survives is stale rather than reused.
+ */
+function discard(directory) {
+  try {
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch (err) {
+    console.log(`note: ${directory} could not be removed (${err.code ?? err.message})`)
+  }
+}
+
 mkdirSync(outDir, { recursive: true })
-rmSync(profileDir, { recursive: true, force: true })
+discard(profileDir)
 mkdirSync(userDataDir, { recursive: true })
 mkdirSync(extensionsDir, { recursive: true })
+discard(scratchHome)
+mkdirSync(scratchHome, { recursive: true })
 
 let halted = null
 
@@ -128,6 +159,90 @@ for (const stage of stages) {
   if (code !== 0 && stage.hardStop) halted = stage.id
 }
 
+// The pinned CLI fixture, acquired before the Electron host rather than from
+// inside a test. A download is not something a fix round can repair, so it must
+// never reach mocha as a red test: an unreachable release leaves the rows that
+// need a real binary as named residue and the rest of the run continues.
+//
+// A checksum mismatch is not that. `skipped` is reserved for work deliberately
+// left to a human, and a pinned asset whose digest no longer matches is either
+// a corrupted cache or a substituted release - reporting it as residue would be
+// the exact false green this harness exists to prevent.
+const fixtureEnv = {}
+let fixtureResidue = null
+
+if (!halted) {
+  try {
+    const pin = readPin()
+    const platform = process.platform
+    const arch = process.arch
+    const current = await acquire({ pin, entry: 'current', platform, arch, env: process.env })
+    const old = await acquire({ pin, entry: 'old', platform, arch, env: process.env })
+    const installed = provision(current.path, scratchHome, platform)
+
+    fixtureEnv.CMM_FIXTURE_HOME = scratchHome
+    fixtureEnv.CMM_FIXTURE_CLI = installed
+    fixtureEnv.CMM_FIXTURE_TAG = current.tag
+    // The older release stays in the cache rather than the scratch home: both
+    // entries carry the same file name, so only one of them can occupy the
+    // install path a row is updating *from*.
+    fixtureEnv.CMM_FIXTURE_CLI_OLD = old.path
+    fixtureEnv.CMM_FIXTURE_TAG_OLD = old.tag
+
+    record(
+      'cli-fixture',
+      'pass',
+      `${current.tag} at ${installed}, ${old.tag} cached${current.cached && old.cached ? ' (both from cache)' : ''}`,
+    )
+  } catch (err) {
+    const kind = classifyAcquisitionError(err)
+    fixtureResidue =
+      `The rows that need a real pinned CLI binary did not run: ${kind} failure - ${err.message}`
+    record(
+      'cli-fixture',
+      kind === 'network' ? 'skipped' : 'fail',
+      `${kind}: ${err.message}`,
+      String(err.stack ?? ''),
+    )
+  }
+}
+
+// Preflight, empirical rather than structural: invoke the pinned CLI once with
+// the scratch HOME already in place and require exit 0. It tests the exact
+// thing the fixture rows depend on, runs unchanged on both operating systems,
+// and survives a future CLI deriving its paths differently - none of which a
+// Windows-only DACL inspector would.
+//
+// A failed preflight is a hard stop, not a test failure. It means the machine
+// is misconfigured, and a machine problem reported as a red test would be
+// handed to a fix round that cannot possibly repair it.
+if (!halted && fixtureEnv.CMM_FIXTURE_CLI) {
+  const preflight = spawnSync(fixtureEnv.CMM_FIXTURE_CLI, ['cli', '--json', 'list_projects'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: { ...process.env, HOME: scratchHome, USERPROFILE: scratchHome },
+  })
+  const output = `${preflight.stdout ?? ''}${preflight.stderr ?? ''}`.trim()
+  if (preflight.error || preflight.status !== 0) {
+    record(
+      'cli-preflight',
+      'error',
+      preflight.error
+        ? preflight.error.message
+        : `the pinned CLI exited ${String(preflight.status)} under the scratch HOME`,
+      `${output}\n\nRemediation: the scratch HOME is rejected by the CLI's own coordination check. ` +
+        `On Windows this is caused by foreign modify-and-delete entries on %LOCALAPPDATA%\\Temp; ` +
+        `remove them once by hand with Get-Acl / RemoveAccessRuleSpecific / Set-Acl. ` +
+        `The run does not repair machine configuration.`,
+    )
+    halted = 'cli-preflight'
+  } else {
+    record('cli-preflight', 'pass', `exit 0 under ${scratchHome}`)
+  }
+} else if (!halted) {
+  record('cli-preflight', 'skipped', 'no fixture to preflight')
+}
+
 // The integration tier is two Electron launches with opposite hosts, and each
 // carries its own verdict. Rolling them into one stage would mean a failure in
 // the `default` suite leaves the `git` suite reported as nothing at all -
@@ -142,6 +257,7 @@ if (halted) {
   const { code, output, spawnError } = exec('node', ['./out/test/integration/runTest.js'], {
     AUTOTEST_USER_DATA_DIR: userDataDir,
     AUTOTEST_EXTENSIONS_DIR: extensionsDir,
+    ...fixtureEnv,
   })
   for (const suite of suites) {
     const resultFile = join(repoRoot, '.vscode-test', `integration-result-${suite}.json`)
@@ -189,7 +305,8 @@ if (halted) {
   }
 }
 
-rmSync(profileDir, { recursive: true, force: true })
+discard(profileDir)
+discard(scratchHome)
 
 // Exit code vocabulary, per the loop contract: 0 is a clean run, 1 says the
 // extension is broken, 2 says the run could not answer the question. Keeping
@@ -208,7 +325,13 @@ const report = {
   // The rows of docs/MANUAL-TESTING.md are not covered by this run yet. Naming
   // that here is not decoration: a report that silently omits what it did not
   // check is exactly the false green this harness exists to prevent.
-  residue: 'No manual-checklist rows are automated yet; the permanent human residue is undecided.',
+  // The rows of docs/MANUAL-TESTING.md this run did not cover. The standing
+  // line always stays: a run whose fixture happened to work must still disclose
+  // what it never checked, or a green report grows quieter the better it goes.
+  residue: [
+    'No manual-checklist rows are automated yet; the permanent human residue is undecided.',
+    ...(fixtureResidue === null ? [] : [fixtureResidue]),
+  ].join('\n\n'),
 }
 
 writeFileSync(join(outDir, 'result.json'), `${JSON.stringify(report, null, 2)}\n`)

@@ -48,6 +48,27 @@ async function main(): Promise<void> {
       profile.push(`--extensions-dir=${process.env.AUTOTEST_EXTENSIONS_DIR}`)
     }
 
+    // The scratch HOME the autotest harness provisioned the pinned CLI into.
+    //
+    // `runTests()` has no environment option of its own; `extensionTestsEnv` is
+    // merged over `process.env` and becomes the spawned Electron process's
+    // environment, so it is the only way to reach the extension host at all.
+    // Both variables are set because `homedir()` reads `USERPROFILE` on Windows
+    // and `HOME` everywhere else - passing one of them leaves the child on the
+    // real profile on the other operating system, and the isolation would
+    // silently do nothing while every test still passed.
+    const fixtureEnv: Record<string, string> = {}
+    if (process.env.CMM_FIXTURE_HOME) {
+      fixtureEnv.HOME = process.env.CMM_FIXTURE_HOME
+      fixtureEnv.USERPROFILE = process.env.CMM_FIXTURE_HOME
+    }
+    for (const key of ['CMM_FIXTURE_CLI', 'CMM_FIXTURE_CLI_OLD', 'CMM_FIXTURE_TAG', 'CMM_FIXTURE_TAG_OLD']) {
+      const value = process.env[key]
+      if (value !== undefined) {
+        fixtureEnv[key] = value
+      }
+    }
+
     // Two launches, because the suites need opposite hosts. The default one
     // keeps `--disable-extensions`, which is what makes it reproducible. The
     // `git` suite needs the built-in git extension actually running, since the
@@ -93,7 +114,11 @@ async function main(): Promise<void> {
           extensionDevelopmentPath,
           extensionTestsPath,
           launchArgs: pass.launchArgs,
-          extensionTestsEnv: { CBM_TEST_SUITE: pass.suite, CBM_RESULT_FILE: resultFile },
+          extensionTestsEnv: {
+            ...fixtureEnv,
+            CBM_TEST_SUITE: pass.suite,
+            CBM_RESULT_FILE: resultFile,
+          },
         })
       } catch (err) {
         // The host exiting non-zero is the normal signal for a failing suite;
