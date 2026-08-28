@@ -40,14 +40,20 @@ function collectTestFiles(dir: string): string[] {
 /** Entry point the VS Code test host loads (see runTest.ts). */
 export async function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'bdd', color: false, timeout: 20_000 })
-  // `git` holds the tests that need the built-in git extension running, so
-  // they are a separate launch without `--disable-extensions` rather than part
-  // of this one. Which set to run comes from runTest.ts.
-  const gitRoot = resolve(__dirname, '../git')
-  const testsRoot = process.env.CBM_TEST_SUITE === 'git' ? gitRoot : resolve(__dirname, '..')
+  // Each named directory holds the tests that need their own host: `git` needs
+  // the built-in git extension running, `workspace` needs a folder open. They
+  // are separate launches rather than part of the default one, so the default
+  // pass keeps `--disable-extensions` and an empty window. Which set to run
+  // comes from runTest.ts.
+  const namedSuites = ['git', 'workspace'] as const
+  const suiteRoots = new Map(namedSuites.map((name) => [name, resolve(__dirname, `../${name}`)]))
+  const suite = process.env.CBM_TEST_SUITE ?? 'default'
+  const namedRoot = suiteRoots.get(suite as (typeof namedSuites)[number])
+  const testsRoot = namedRoot ?? resolve(__dirname, '..')
 
   const files = collectTestFiles(testsRoot).filter(
-    (file) => process.env.CBM_TEST_SUITE === 'git' || !file.startsWith(gitRoot),
+    (file) =>
+      namedRoot !== undefined || ![...suiteRoots.values()].some((root) => file.startsWith(root)),
   )
   for (const file of files) {
     mocha.addFile(file)

@@ -8,6 +8,8 @@
 
 - The unattended pass runs its integration suites on macOS. Electron opens a unix domain socket inside the profile it is given, a unix socket path may not exceed 103 bytes on macOS, and the runner's per-user temp directory spends 49 of those before the profile name is added - so the host failed to listen with `EINVAL` and exited before a single test ran. The profile directory is now named by a short hash of the run id, and on macOS it sits under `/tmp`.
 
+- Three rows of the manual checklist run unattended now, and nothing about the installed extension changes with them. A third Electron pass launches with this repo's own checkout open as the workspace and asserts that the open repository never appears as an indexed project and never changes the workspace folders, which is a row the other two passes run on an empty window and cannot observe at all. The clipboard rows cover all four copy commands - uninstall and daemon stop, in the default shell's spelling and Git Bash's - asserting the call operator PowerShell needs, the forward slashes and absent call operator Git Bash needs, and that none of them opens a terminal.
+
 ## [1.1.3]
 
 - The panel shows node, edge and size counts again, along with each project's branch. CLI 0.10.8 turned `list_projects`' details into an opt-in: `include_details` now defaults to false, so every project came back carrying nothing but its name and root path, and the panel rendered "-" for every count and for the totals across the top. The extension now asks for them with `--include-details=true`. Nothing about the engine or the index was wrong here, which is why a reindex changed the log without ever changing the numbers.

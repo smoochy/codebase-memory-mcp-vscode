@@ -60,6 +60,16 @@ async function main(): Promise<void> {
         launchArgs: ['--disable-extensions', ...sandbox, ...profile],
       },
       { name: 'integration (git)', suite: 'git', launchArgs: [...sandbox, ...profile] },
+      // Checklist row B5 asks what happens when a repository is open: the
+      // workspace must never list itself as an indexed project. The default
+      // pass runs on an empty window and cannot see that at all. This repo's
+      // own checkout is the folder - a real repository that already exists, so
+      // the row costs no fixture.
+      {
+        name: 'integration (workspace)',
+        suite: 'workspace',
+        launchArgs: ['--disable-extensions', ...sandbox, ...profile, extensionDevelopmentPath],
+      },
     ]
 
     // Both passes always run. A failing `default` pass used to abort before the

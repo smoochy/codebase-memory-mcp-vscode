@@ -32,20 +32,64 @@ describe('extension activation', () => {
     assert.equal(vscode.workspace.workspaceFolders?.length ?? 0, before)
   })
 
-  it('copies the uninstall command to the clipboard without opening a terminal', async () => {
-    const terminalsBefore = vscode.window.terminals.length
-    await vscode.commands.executeCommand('betterCmm.copyUninstallCommand')
-    // Bound to whichever binary this machine resolved, or the bare command
-    // when none did. Both end in the subcommand and neither opens a terminal,
-    // which is the part that matters here.
-    const copied = await vscode.env.clipboard.readText()
-    assert.match(copied, / uninstall$/)
-    assert.ok(
-      copied === 'codebase-memory-mcp uninstall' || copied.includes('"'),
-      `unexpected uninstall command: ${copied}`,
-    )
-    assert.equal(vscode.window.terminals.length, terminalsBefore)
-  })
+  // Checklist row B13, the half a test can answer: what lands in the clipboard
+  // on the operating system this run is on. Whether the pasted line then runs
+  // in the shell it is labelled for stays human - that is the half that found
+  // the Git Bash defect, and no test host can paste into a real shell.
+  //
+  // The four commands are asserted together because they are one rule with two
+  // axes: which subcommand, and which shell spelling. A bare command is the
+  // documented fallback when no binary resolved, which is this host's case, so
+  // each assertion has to accept both shapes without accepting a wrong one.
+  const CLIPBOARD_ROWS: { command: string; bare: string; bash: boolean }[] = [
+    { command: 'betterCmm.copyUninstallCommand', bare: 'codebase-memory-mcp uninstall', bash: false },
+    {
+      command: 'betterCmm.copyUninstallCommandBash',
+      bare: 'codebase-memory-mcp uninstall',
+      bash: true,
+    },
+    {
+      command: 'betterCmm.copyDaemonStopCommand',
+      bare: 'codebase-memory-mcp daemon stop',
+      bash: false,
+    },
+    {
+      command: 'betterCmm.copyDaemonStopCommandBash',
+      bare: 'codebase-memory-mcp daemon stop',
+      bash: true,
+    },
+  ]
+
+  for (const row of CLIPBOARD_ROWS) {
+    it(`copies a runnable ${row.command} string for this platform`, async () => {
+      const terminalsBefore = vscode.window.terminals.length
+      await vscode.commands.executeCommand(row.command)
+      const copied = await vscode.env.clipboard.readText()
+      const subcommand = row.bare.slice('codebase-memory-mcp '.length)
+
+      assert.ok(copied.endsWith(subcommand), `${row.command} copied: ${copied}`)
+      if (copied === row.bare) {
+        // No binary resolved on this host; the bare command is the fallback.
+        assert.equal(vscode.window.terminals.length, terminalsBefore)
+        return
+      }
+
+      assert.ok(copied.includes('"'), `a bound command must quote its path: ${copied}`)
+      if (row.bash) {
+        // Git Bash reads a leading & as a background job, and it takes forward
+        // slashes. Both were real defects.
+        assert.ok(!copied.startsWith('&'), `Git Bash cannot parse a call operator: ${copied}`)
+        assert.ok(!copied.includes('\\'), `a Git Bash path must use forward slashes: ${copied}`)
+      } else if (process.platform === 'win32') {
+        // PowerShell is the default terminal there, and a quoted string in
+        // command position is a parse error without the call operator.
+        assert.ok(copied.startsWith('& "'), `PowerShell needs the call operator: ${copied}`)
+      } else {
+        assert.ok(copied.startsWith('"'), `unexpected spelling for this platform: ${copied}`)
+      }
+      assert.equal(vscode.window.terminals.length, terminalsBefore)
+    })
+  }
 
   // The server reaches VS Code through a provider rather than a file, so the
   // contribution point and the API behind it both have to be there on the host
