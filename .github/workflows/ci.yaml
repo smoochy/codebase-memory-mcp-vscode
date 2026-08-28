@@ -33,6 +33,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Registry drift, and the unit-tier identifiers it names. The
+      # integration-tier half of this check needs a run's result files and is
+      # answered by `npm run autotest`; here it reports as skipped rather than
+      # failing, which is why this step belongs beside lint and not in place of
+      # the run.
+      - run: npm run check:rows
 
   test-unit:
     runs-on: ubuntu-latest

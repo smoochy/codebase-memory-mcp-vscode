@@ -25,6 +25,8 @@ import {
   provision,
   readPin,
 } from './cli-fixture.mjs'
+import { checkRows } from './check-rows.mjs'
+import { residue as rowResidue } from './manual-testing-rows.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -305,8 +307,37 @@ if (halted) {
   }
 }
 
+// The row registry, checked last because part of it reads the result files the
+// integration stage just wrote. A halted run leaves those files stale - from
+// whichever run wrote them last - so the check is not attempted at all rather
+// than answered from a previous run's evidence.
+if (halted) {
+  record('rows', 'error', `not run: ${halted} failed`)
+} else {
+  try {
+    const result = checkRows()
+    record('rows', result.status, result.detail, result.output)
+  } catch (err) {
+    record('rows', 'error', `the row checks threw: ${err.message}`, String(err.stack ?? ''))
+  }
+}
+
 discard(profileDir)
 discard(scratchHome)
+
+/**
+ * The residue line, or an honest explanation of why there is none.
+ *
+ * An unreadable registry already failed the `rows` unit above; it must not also
+ * throw here, where it would take the report and the exit code with it.
+ */
+function rowResidueOrExplanation() {
+  try {
+    return rowResidue()
+  } catch (err) {
+    return `The residue could not be derived from docs/manual-testing-rows.json: ${err.message}`
+  }
+}
 
 // Exit code vocabulary, per the loop contract: 0 is a clean run, 1 says the
 // extension is broken, 2 says the run could not answer the question. Keeping
@@ -322,14 +353,13 @@ const report = {
   platform: process.platform,
   exitCode,
   units,
-  // The rows of docs/MANUAL-TESTING.md are not covered by this run yet. Naming
-  // that here is not decoration: a report that silently omits what it did not
-  // check is exactly the false green this harness exists to prevent.
-  // The rows of docs/MANUAL-TESTING.md this run did not cover. The standing
-  // line always stays: a run whose fixture happened to work must still disclose
-  // what it never checked, or a green report grows quieter the better it goes.
+  // The rows of docs/MANUAL-TESTING.md this run did not cover, derived from
+  // docs/manual-testing-rows.json rather than written out here: when a row
+  // changes status, this line changes with it and nobody has to remember. A run
+  // whose fixture happened to work must still disclose what it never checked,
+  // or a green report grows quieter the better it goes.
   residue: [
-    'No manual-checklist rows are automated yet; the permanent human residue is undecided.',
+    rowResidueOrExplanation(),
     ...(fixtureResidue === null ? [] : [fixtureResidue]),
   ].join('\n\n'),
 }
@@ -353,5 +383,9 @@ const markdown = [
 
 writeFileSync(join(outDir, 'report.md'), markdown)
 
+// The residue goes to the log as well as into the report: the log is what a
+// person watching the run reads, and a run that only files its uncovered rows
+// in an artifact reads as if it covered everything.
+console.log(`\nnot checked by this run:\n${report.residue}`)
 console.log(`\nreport: ${join(outDir, 'report.md')}`)
 process.exit(exitCode)
