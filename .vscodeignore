@@ -27,3 +27,7 @@ assets/**
 .github/**
 # Scratch files from local preview/probe runs.
 .tmp-*
+# Reports written by scripts/autotest.mjs. The harness packages the extension
+# from a working tree that already holds its own earlier reports, so without
+# this the run ships its own output inside the artifact it is testing.
+.autotest/**

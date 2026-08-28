@@ -10,6 +10,8 @@ dist/
 .superpowers/
 # Scratch files from local preview and probe runs.
 .tmp-*
+# Reports written by scripts/autotest.mjs, one directory per run.
+.autotest/
 coverage/
 *.log
 # Local environment and editor state, none of which belongs to the extension.

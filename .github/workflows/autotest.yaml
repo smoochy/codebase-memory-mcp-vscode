@@ -1,0 +1,66 @@
+name: autotest
+
+# Manual only, for now. This is the skeleton of the unattended verification
+# run: it proves the harness reports every stage honestly, before any of the
+# manual-checklist rows are automated into it. The five jobs in ci.yaml stay
+# exactly as they are and remain the required checks, so nothing here can break
+# the pull request pipeline while the mechanism is still being settled.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autotest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autotest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every operating system reports, even when one of them fails. A run that
+      # stops at the first red runner cannot say whether the others agreed.
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          # ci.yaml never runs macOS, so the macOS branch of the extension has
+          # no coverage at all today. It belongs here rather than in the
+          # required checks, where an unknown-quality runner would block merges.
+          - macos-latest
+    steps:
+      # Actions pinned to a commit SHA rather than a tag: a tag is mutable and
+      # can be repointed at other code by whoever owns the action repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # The integration stage downloads and launches a real VS Code. On Linux
+      # that needs a display, hence xvfb; Windows and macOS run it headed as-is.
+      - name: Run the unattended verification pass
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a npm run autotest
+          else
+            npm run autotest
+          fi
+        shell: bash
+        env:
+          AUTOTEST_RUN_ID: ${{ github.run_id }}-${{ matrix.os }}
+
+      # The report is the deliverable, and it matters most when the run failed,
+      # so it is uploaded regardless of the outcome.
+      - name: Upload the run report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autotest-${{ matrix.os }}
+          path: .autotest/
+          if-no-files-found: error

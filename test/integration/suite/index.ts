@@ -8,7 +8,13 @@ import Mocha from 'mocha'
  * that passed. Write the outcome where runTest.ts can read it instead.
  */
 // __dirname is out/test/integration/suite, so four levels up is the repo root.
-const RESULT_FILE = resolve(__dirname, '../../../../.vscode-test/integration-result.json')
+const DEFAULT_RESULT_FILE = resolve(
+  __dirname,
+  '../../../../.vscode-test/integration-result-default.json',
+)
+// runTest.ts names one file per suite; the fallback only matters when the
+// entry point is launched by hand.
+const RESULT_FILE = process.env.CBM_RESULT_FILE ?? DEFAULT_RESULT_FILE
 
 function writeResult(result: Record<string, unknown>): void {
   try {
@@ -49,17 +55,32 @@ export async function run(): Promise<void> {
 
   // Zero discovered files is a harness failure, not a pass.
   if (files.length === 0) {
-    writeResult({ files: 0, passing: 0, failing: 0, error: 'no test files discovered' })
+    writeResult({
+      files: 0,
+      passing: 0,
+      failing: 0,
+      pending: 0,
+      tests: [],
+      error: 'no test files discovered',
+    })
     throw new Error(`no integration test files found under ${testsRoot}`)
   }
 
   return new Promise((resolvePromise, reject) => {
     const failureMessages: string[] = []
+    // Every test that ran, by full title and outcome. Aggregate counts alone
+    // cannot answer "did this checklist row run, and what did it say" - a row
+    // that stops being discovered, or gets marked pending, just makes a count
+    // one smaller with nothing naming what disappeared. The autotest harness
+    // reads these titles to map tests onto checklist rows.
+    const tests: { title: string; state: string }[] = []
     const runner = mocha.run((failures) => {
       writeResult({
         files: files.length,
         passing: runner.stats?.passes ?? 0,
         failing: failures,
+        pending: runner.stats?.pending ?? 0,
+        tests,
         failureMessages,
       })
       if (failures > 0) {
@@ -67,6 +88,12 @@ export async function run(): Promise<void> {
       } else {
         resolvePromise()
       }
+    })
+    runner.on('pending', (test) => {
+      tests.push({ title: test.fullTitle(), state: 'pending' })
+    })
+    runner.on('test end', (test) => {
+      tests.push({ title: test.fullTitle(), state: test.state ?? 'unknown' })
     })
     runner.on('fail', (test, err: Error) => {
       failureMessages.push(`${test.fullTitle()}: ${err.message}`)

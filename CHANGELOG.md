@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Development tooling only, nothing about the installed extension changes. `npm run autotest` runs one unattended verification pass - build, VSIX package, lint, unit, package and both integration suites - and writes a JSON record plus a Markdown summary under `.autotest/<run-id>/`, exiting 0 for a clean run, 1 when the extension is broken and 2 when the run could not answer the question. The integration suites now report every test by title and outcome rather than a bare pass count, both Electron passes always run so a failure in the first no longer leaves the second with no verdict at all, and the harness threads a fresh profile through `--user-data-dir`/`--extensions-dir` so one round cannot inherit extension-host state from the last. A new manually triggered `autotest` workflow runs the same pass on Linux, Windows and macOS; the existing required checks are untouched.
+
 ## [1.1.3]
 
 - The panel shows node, edge and size counts again, along with each project's branch. CLI 0.10.8 turned `list_projects`' details into an opt-in: `include_details` now defaults to false, so every project came back carrying nothing but its name and root path, and the panel rendered "-" for every count and for the totals across the top. The extension now asks for them with `--include-details=true`. Nothing about the engine or the index was wrong here, which is why a reindex changed the log without ever changing the numbers.
