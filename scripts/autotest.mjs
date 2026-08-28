@@ -14,6 +14,7 @@
 // would duplicate exactly that trap.
 
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -30,7 +31,17 @@ const outDir = join(repoRoot, '.autotest', runId)
 // extension-host cache and settings, so a round-N pass would not reproduce on a
 // clean install. The Electron download cache under .vscode-test stays shared -
 // that is a binary, not state.
-const profileDir = join(tmpdir(), `autotest-profile-${runId}`)
+//
+// The directory name is a short hash rather than the run id, and on macOS it
+// sits under /tmp rather than the per-user temp directory. Electron opens a
+// unix domain socket inside user-data, and a unix socket path is limited to
+// 103 bytes on macOS; the runner's own tmpdir is `/var/folders/<2>/<26>/T/`,
+// which spends 49 of those before the profile name is added at all. Exceeding
+// the limit fails the listen with EINVAL and the host dies before a single
+// test runs - which the harness can only report as `error`.
+const profileBase = process.platform === 'darwin' ? '/tmp' : tmpdir()
+const profileKey = createHash('sha256').update(runId).digest('hex').slice(0, 8)
+const profileDir = join(profileBase, `autotest-${profileKey}`)
 const userDataDir = join(profileDir, 'user-data')
 const extensionsDir = join(profileDir, 'extensions')
 
