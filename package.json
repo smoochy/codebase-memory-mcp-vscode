@@ -46,6 +46,7 @@
     "test:integration": "npm run build && npm run compile:test && node ./out/test/integration/runTest.js",
     "test:package": "npm run build && npm run compile:test && mocha --no-config --spec out/test/package/**/*.test.js",
     "test": "npm run test:unit && npm run test:integration",
+    "autotest": "node scripts/autotest.mjs",
     "lint": "tsc --noEmit -p tsconfig.json",
     "package": "vsce package --no-dependencies"
   },
