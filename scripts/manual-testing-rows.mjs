@@ -19,6 +19,10 @@ const SECTIONS = ['A', 'B', 'C']
 const STATUSES = ['automated', 'human', 'unrun']
 const PRIORITIES = ['Blocking', 'Important', 'Nice to have']
 const TIERS = ['integration', 'unit']
+// Operating systems a row can be scoped to. A scoped row's test is registered
+// only there - Windows file locking has no POSIX equivalent to port - so its
+// absence elsewhere is correct rather than missing coverage.
+const PLATFORMS = ['win32', 'darwin', 'linux']
 
 /** A row's identity: section plus number, never the number alone. 14 and 15 each appear twice. */
 export function rowId(row) {
@@ -59,6 +63,12 @@ export function readRegistry() {
     if (row.tier !== undefined && row.test === undefined) {
       problems.push(`${id}: tier without a test identifier`)
     }
+    if (row.platform !== undefined && !PLATFORMS.includes(row.platform)) {
+      problems.push(`${id}: unknown platform ${row.platform}`)
+    }
+    if (row.platform !== undefined && row.test === undefined) {
+      problems.push(`${id}: platform without a test identifier`)
+    }
   }
 
   if (problems.length > 0) {
@@ -73,6 +83,9 @@ export function tierOf(row) {
 }
 
 function statusCell(row) {
+  if (row.status === 'automated' && row.platform !== undefined) {
+    return `automated on ${row.platform} only - \`${row.test}\``
+  }
   if (row.status === 'automated') return `automated - \`${row.test}\``
   // A human row may still carry a test: that names the half automation reaches,
   // and hiding it would make the doc claim less coverage than exists.
@@ -154,11 +167,22 @@ export function residue(rows = readRegistry()) {
   const human = by('human')
   const unrun = by('unrun')
   const partial = human.filter((row) => row.test !== undefined)
+  // A row scoped to another operating system did not run here, and a run that
+  // stayed silent about it would report coverage this machine never produced.
+  const elsewhere = automated.filter(
+    (row) => row.platform !== undefined && row.platform !== process.platform,
+  )
 
   return [
     `${String(automated.length)} automated rows covered (${ids(automated)}), ` +
       `${String(human.length)} human rows not covered (${ids(human)}), ` +
       `${String(unrun.length)} unrun (${ids(unrun)}).`,
+    ...(elsewhere.length === 0
+      ? []
+      : [
+          `Automated only on another operating system, and therefore unchecked by this run ` +
+            `on ${process.platform}: ${ids(elsewhere)}.`,
+        ]),
     ...(partial.length === 0
       ? []
       : [

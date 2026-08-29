@@ -1,6 +1,6 @@
 import { downloadAndUnzipVSCode, runTests } from '@vscode/test-electron'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { delimiter, resolve } from 'node:path'
 
 interface SuiteResult {
   files: number
@@ -69,6 +69,18 @@ async function main(): Promise<void> {
       }
     }
 
+    // A developer's own CLI on PATH defeats the scratch HOME entirely: the
+    // extension resolves it as an external install and `refuseIfExternal` then
+    // blocks setup and update, so every fixture row fails for a reason that has
+    // nothing to do with the extension. `~/.local/bin` is where the CLI's own
+    // installer puts it. Only filtered when the run brought a scratch HOME,
+    // since without one there is nothing to protect.
+    if (process.env.CMM_FIXTURE_HOME && process.env.PATH) {
+      fixtureEnv.PATH = process.env.PATH.split(delimiter)
+        .filter((entry) => !/[\\/]\.local[\\/]bin[\\/]?$/.test(entry))
+        .join(delimiter)
+    }
+
     // Two launches, because the suites need opposite hosts. The default one
     // keeps `--disable-extensions`, which is what makes it reproducible. The
     // `git` suite needs the built-in git extension actually running, since the
@@ -92,6 +104,23 @@ async function main(): Promise<void> {
         launchArgs: ['--disable-extensions', ...sandbox, ...profile, extensionDevelopmentPath],
       },
     ]
+
+    // Checklist rows A10, A11 and B17 replace the managed binary under the
+    // scratch HOME with the pinned older build and update back out of it, and a
+    // daemon started from it outlives the window. Their own launch, ordered
+    // last, so no other suite ever observes a half-updated installation.
+    //
+    // Added only when the fixture exists. Every test in the suite needs a real
+    // older build to update from, so without one the whole suite would be
+    // pending - which this runner reads as zero passing tests, and would turn a
+    // plain `npm run test:integration` on a developer machine red.
+    if (process.env.CMM_FIXTURE_CLI && process.env.CMM_FIXTURE_CLI_OLD) {
+      passes.push({
+        name: 'integration (update)',
+        suite: 'update',
+        launchArgs: ['--disable-extensions', ...sandbox, ...profile],
+      })
+    }
 
     // Both passes always run. A failing `default` pass used to abort before the
     // `git` pass launched, which left every test in that suite with no verdict
