@@ -49,8 +49,8 @@
       "task": "With an older managed binary, restart",
       "expected": "Update offer appears and applies; Windows update succeeds while the server runs",
       "priority": "Blocking",
-      "status": "unrun",
-      "note": "Probed green against the pinned `old` binary; becoming a permanent test."
+      "status": "automated",
+      "test": "updating the managed binary completes an update from a real older build while its server runs"
     },
     {
       "section": "A",
@@ -59,8 +59,10 @@
       "task": "Lock the target file, then update",
       "expected": "Old binary restored, error explains where the backup is",
       "priority": "Blocking",
-      "status": "unrun",
-      "note": "Probed green with a `FileShare.Read` handle on the target; becoming a permanent test."
+      "status": "automated",
+      "platform": "win32",
+      "test": "updating the managed binary rolls back and leaves the older installation intact when the target is locked",
+      "note": "Windows file locking has no POSIX equivalent, so the test is registered on Windows only."
     },
     {
       "section": "B",
@@ -141,8 +143,8 @@
       "task": "With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel",
       "expected": "The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload",
       "priority": "Blocking",
-      "status": "unrun",
-      "note": "Probed green across a running old daemon; becoming a permanent test."
+      "status": "automated",
+      "test": "updating the managed binary stops a 0.10.x daemon as part of the update"
     },
     {
       "section": "B",

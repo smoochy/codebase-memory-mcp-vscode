@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 
 import { docPath, readRegistry, renderDoc, repoRoot, rowId, tierOf } from './manual-testing-rows.mjs'
 
-const SUITES = ['default', 'git', 'workspace']
+const SUITES = ['default', 'git', 'workspace', 'update']
 
 function unitSources() {
   const dir = join(repoRoot, 'test', 'unit')
@@ -90,7 +90,24 @@ export function checkRows() {
     }
   }
 
-  const integrationRows = covered.filter((row) => tierOf(row) === 'integration')
+  // A row whose behaviour only exists on one operating system - Windows file
+  // locking, say - registers its test only there. On every other platform the
+  // identifier is legitimately absent, so demanding it would turn a correct run
+  // red. The residue reported by the run is what discloses that the row went
+  // unchecked here; silence in this check is not a claim of coverage.
+  const elsewhere = covered.filter(
+    (row) => typeof row.platform === 'string' && row.platform !== process.platform,
+  )
+  if (elsewhere.length > 0) {
+    notes.push(
+      `${String(elsewhere.length)} row(s) are scoped to another platform and were not checked ` +
+        `on ${process.platform}: ${elsewhere.map(rowId).join(', ')}`,
+    )
+  }
+
+  const integrationRows = covered.filter(
+    (row) => tierOf(row) === 'integration' && !elsewhere.includes(row),
+  )
   const unanswered = []
   for (const row of integrationRows) {
     if (passed.has(row.test)) continue
@@ -131,7 +148,11 @@ export function checkRows() {
   if (missing.length === SUITES.length) {
     return { status: 'skipped', detail: notes.join('; '), output: '' }
   }
-  return { status: 'pass', detail: `${String(rows.length)} rows, ${String(covered.length)} with a test`, output: '' }
+  return {
+    status: 'pass',
+    detail: `${String(rows.length)} rows, ${String(covered.length)} with a test`,
+    output: notes.join('\n'),
+  }
 }
 
 // Runnable on its own: `npm run check:rows`. A `fail` exits 1 (something is

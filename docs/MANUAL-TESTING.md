@@ -53,8 +53,8 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 | 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking | human |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking | human |
 | 8 | Provided MCP server | After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage` | "Codebase Memory" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install` | Blocking | automated - `extension activation contributes an MCP server definition provider the host supports` |
-| 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking | unrun |
-| 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking | unrun |
+| 10 | Update | With an older managed binary, restart | Update offer appears and applies; Windows update succeeds while the server runs | Blocking | automated - `updating the managed binary completes an update from a real older build while its server runs` |
+| 11 | Windows rollback | Lock the target file, then update | Old binary restored, error explains where the backup is | Blocking | automated on win32 only - `updating the managed binary rolls back and leaves the older installation intact when the target is locked` |
 
 **Why these matter most.** #2, #3 and #11 exercise the code that writes an executable to disk. The unit tests prove a checksum mismatch aborts without writing, but only a real run proves the same on a genuine interrupted download.
 
@@ -73,7 +73,7 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 9 | Hand-written entry | Add a `codebase-memory-mcp` entry to `mcp.json` by hand and reload | The provided server and the hand-written one appear side by side as separate servers; the extension does not remove the entry outside its own `install` call | Important | automated - `removes our own entry and leaves every other server in place` |
 | 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking | human |
 | 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking | human |
-| 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking | unrun |
+| 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking | automated - `updating the managed binary stops a 0.10.x daemon as part of the update` |
 | 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important | unrun |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important | human - part covered by `extension activation copies a runnable betterCmm.copyUninstallCommand string for this platform` |
 | 13 | Clipboard | Run the copy-uninstall and copy-daemon-stop commands on Windows, macOS, Linux | Correct string in the clipboard on each, and the pasted line runs in the shell it is labelled for | Important | human - part covered by `extension activation copies a runnable betterCmm.copyDaemonStopCommand string for this platform` |
@@ -115,10 +115,7 @@ Rows with the status `unrun` are automatable and have no test yet. They are not 
 ### Automatable, no test yet
 
 - A1 First start - Automatable as its own launch against an installed build, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there.
-- A10 Update - Probed green against the pinned `old` binary; becoming a permanent test.
-- A11 Windows rollback - Probed green with a `FileShare.Read` handle on the target; becoming a permanent test.
 - B4 External binary - Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle.
-- B17 Update across the daemon - Probed green across a running old daemon; becoming a permanent test.
 - B18 Branch and staleness on 0.10.x - Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary.
 
 ---

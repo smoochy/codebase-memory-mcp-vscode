@@ -45,7 +45,7 @@ export async function run(): Promise<void> {
   // are separate launches rather than part of the default one, so the default
   // pass keeps `--disable-extensions` and an empty window. Which set to run
   // comes from runTest.ts.
-  const namedSuites = ['git', 'workspace'] as const
+  const namedSuites = ['git', 'workspace', 'update'] as const
   const suiteRoots = new Map(namedSuites.map((name) => [name, resolve(__dirname, `../${name}`)]))
   const suite = process.env.CBM_TEST_SUITE ?? 'default'
   const namedRoot = suiteRoots.get(suite as (typeof namedSuites)[number])

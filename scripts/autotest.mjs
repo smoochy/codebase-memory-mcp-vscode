@@ -249,7 +249,16 @@ if (!halted && fixtureEnv.CMM_FIXTURE_CLI) {
 // carries its own verdict. Rolling them into one stage would mean a failure in
 // the `default` suite leaves the `git` suite reported as nothing at all -
 // indistinguishable from a suite that passed.
+//
+// The `update` suite only launches when the pinned fixture was acquired: its
+// rows need a real older build to update from, and runTest.js leaves the suite
+// out entirely without one. Expecting a result file that was never going to be
+// written would report a missing fixture twice - once as residue, once as an
+// inconclusive suite.
 const suites = ['default', 'git', 'workspace']
+if (fixtureEnv.CMM_FIXTURE_CLI && fixtureEnv.CMM_FIXTURE_CLI_OLD) {
+  suites.push('update')
+}
 
 if (halted) {
   for (const suite of suites) {
