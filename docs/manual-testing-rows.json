@@ -72,8 +72,9 @@
       "task": "Set `binarySource` to `external`, point at your own install",
       "expected": "No update button, no install button, panel still lists projects",
       "priority": "Blocking",
-      "status": "unrun",
-      "note": "Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle."
+      "status": "automated",
+      "test": "an external binary offers no Setup and no Update button, and still lists projects",
+      "note": "Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses. The pinned binary is what makes it more than a config toggle: `external` with nothing to point at resolves to the needs-setup screen, which would satisfy an assertion about the update button for the wrong reason, so the test also asserts the panel reports the source as external."
     },
     {
       "section": "B",
@@ -154,8 +155,9 @@
       "task": "Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh",
       "expected": "The card shows the branch, and the project is reported as outdated after the checkout moves",
       "priority": "Important",
-      "status": "unrun",
-      "note": "Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary."
+      "status": "automated",
+      "test": "branch and staleness of an indexed checkout reports the project outdated once the checkout moves on",
+      "note": "Two tests in `branch-staleness.test.ts`: \"names the branch the project was indexed from\" covers the first half, and the named one covers the second. The panel markup is the observable rather than the log line, which says \"outdated\" only once per change."
     },
     {
       "section": "B",

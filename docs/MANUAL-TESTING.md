@@ -66,7 +66,7 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 
 | # | Area | What to do | Expected | Priority | Status |
 |---|---|---|---|---|---|
-| 4 | External binary | Set `binarySource` to `external`, point at your own install | No update button, no install button, panel still lists projects | Blocking | unrun |
+| 4 | External binary | Set `binarySource` to `external`, point at your own install | No update button, no install button, panel still lists projects | Blocking | automated - `an external binary offers no Setup and no Update button, and still lists projects` |
 | 5 | Workspace | Open a repository, look at the project list | Workspace is **not** listed as a project by itself | Blocking | automated - `an open repository is not treated as a project does not render the open folder as a project card` |
 | 6 | Add repositories | Add several folders at once | All indexed, `workspaceFolders` unchanged, no folder added to the workspace | Blocking | automated - `commands behind a modal dialog opens a folder picker for add repositories, and a dismissal is a no-op` |
 | 7 | Remove project | Remove a project | Confirmation mentions the index only, never the workspace | Blocking | automated - `commands behind a modal dialog names the project in the confirmation, and a dismissal never reaches the CLI` |
@@ -74,7 +74,7 @@ The logic is unit-tested; what is untested is whether the extension wires it to 
 | 14 | Two machines, Settings Sync on | With Settings Sync enabled on a Windows and a macOS machine, run Setup on both and use the server on each | Both work at once and neither inherits the other's absolute path; `mcp.json` carries no entry of ours on either machine, so there is nothing to ping-pong | Blocking | human |
 | 15 | Changed binary | Switch `binarySource`, or take an update, without reloading the window | The provided server carries the new binary - VS Code offers to refresh the tools rather than requiring a window reload | Blocking | human |
 | 17 | Update across the daemon | With a CLI 0.10.x engine running (any CLI call starts its daemon), take an update from the panel | The panel does not warn about a surviving daemon, the project list still renders, and reindex works without a window reload | Blocking | automated - `updating the managed binary stops a 0.10.x daemon as part of the update` |
-| 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important | unrun |
+| 18 | Branch and staleness on 0.10.x | Against a 0.10.x binary, look at an indexed git checkout, then commit in it and refresh | The card shows the branch, and the project is reported as outdated after the checkout moves | Important | automated - `branch and staleness of an indexed checkout reports the project outdated once the checkout moves on` |
 | 12 | Uninstall | Uninstall the extension | No terminal opens; copy-command hint discoverable in the README | Important | human - part covered by `extension activation copies a runnable betterCmm.copyUninstallCommand string for this platform` |
 | 13 | Clipboard | Run the copy-uninstall and copy-daemon-stop commands on Windows, macOS, Linux | Correct string in the clipboard on each, and the pasted line runs in the shell it is labelled for | Important | human - part covered by `extension activation copies a runnable betterCmm.copyDaemonStopCommand string for this platform` |
 
@@ -114,8 +114,7 @@ Rows with the status `unrun` are automatable and have no test yet. They are not 
 
 ### Automatable, no test yet
 
-- B4 External binary - Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle.
-- B18 Branch and staleness on 0.10.x - Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary.
+Nothing - every automatable row has a test.
 
 ---
 
