@@ -49,7 +49,7 @@ These need a real GitHub release, real network conditions, or a real MCP client.
 
 | # | Area | What to do | Expected | Priority | Status |
 |---|---|---|---|---|---|
-| 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking | unrun |
+| 1 | First start | Install the `.vsix` in a clean profile, open the panel | Setup prompt appears, no error notification | Blocking | automated - `installed build first start activates a production installation without error` |
 | 2 | Download | Run setup, choose `managed` | Binary lands in `~/.local/bin`, checksum verified, no terminal prompt; the Setup button fills with a percentage and reads "Installing..." past 90 | Blocking | human |
 | 3 | Offline | Disable the network, run setup | Clear error message, **no half-written binary left behind** | Blocking | human |
 | 8 | Provided MCP server | After Setup, check the MCP server list and this installation's own `mcp.json` - the one beside its `globalStorage` | "Codebase Memory" is listed as coming from this extension and starts; the file holds **no** `codebase-memory-mcp` key, not even right after Setup ran the CLI's `install` | Blocking | automated - `extension activation contributes an MCP server definition provider the host supports` |
@@ -114,7 +114,6 @@ Rows with the status `unrun` are automatable and have no test yet. They are not 
 
 ### Automatable, no test yet
 
-- A1 First start - Automatable as its own launch against an installed build, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there.
 - B4 External binary - Config update plus `panelHtmlForTests()`, the shape `update-check.test.ts` already uses; needs the pinned binary to be more than a config toggle.
 - B18 Branch and staleness on 0.10.x - Same shape as `git/head-commit.test.ts`, but it needs an indexed project, so it waits on the pinned binary.
 

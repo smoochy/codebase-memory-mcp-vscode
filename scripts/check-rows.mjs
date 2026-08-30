@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 
 import { docPath, readRegistry, renderDoc, repoRoot, rowId, tierOf } from './manual-testing-rows.mjs'
 
-const SUITES = ['default', 'git', 'workspace', 'update']
+const SUITES = ['default', 'git', 'workspace', 'update', 'installed']
 
 function unitSources() {
   const dir = join(repoRoot, 'test', 'unit')

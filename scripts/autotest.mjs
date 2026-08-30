@@ -259,6 +259,15 @@ const suites = ['default', 'git', 'workspace']
 if (fixtureEnv.CMM_FIXTURE_CLI && fixtureEnv.CMM_FIXTURE_CLI_OLD) {
   suites.push('update')
 }
+// Checklist row A1 runs against the artifact the `vsix` stage just produced, so
+// it is expected exactly when that stage passed. Reading the stage's own record
+// rather than looking for the file again keeps one answer to "is there a
+// package": a stale `.vsix` from an earlier version cannot make this suite
+// expected, and runTest.js will not run it either, since it only accepts the
+// artifact this manifest's version names.
+if (units.find((unit) => unit.id === 'vsix')?.status === 'pass') {
+  suites.push('installed')
+}
 
 if (halted) {
   for (const suite of suites) {
