@@ -1,5 +1,5 @@
-import { downloadAndUnzipVSCode, runTests } from '@vscode/test-electron'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { downloadAndUnzipVSCode, runTests, runVSCodeCommand } from '@vscode/test-electron'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { delimiter, resolve } from 'node:path'
 
 interface SuiteResult {
@@ -86,13 +86,35 @@ async function main(): Promise<void> {
     // `git` suite needs the built-in git extension actually running, since the
     // behaviour it guards - never registering an indexed project as a
     // repository - cannot be observed while that extension is disabled.
-    const passes: { name: string; suite: string; launchArgs: string[] }[] = [
+    // `developmentPath` never points at this checkout for the installed pass,
+    // and that is the whole point of it: with the checkout as the development
+    // path the host runs the sources, and checklist row A1 asks about an
+    // installed artifact.
+    //
+    // It points at an empty directory rather than at nothing, because
+    // `--extensionDevelopmentPath` is what puts the window into the extension
+    // development host that honours `--extensionTestsPath` at all. Dropping the
+    // flag entirely - an empty array here - launches an ordinary window that
+    // opens, loads the installed extension, runs no test and never exits: a
+    // hang, not a failure, which is the worst shape an unattended run can take.
+    const passes: {
+      name: string
+      suite: string
+      launchArgs: string[]
+      developmentPath: string | string[]
+    }[] = [
       {
         name: 'integration',
         suite: 'default',
         launchArgs: ['--disable-extensions', ...sandbox, ...profile],
+        developmentPath: extensionDevelopmentPath,
       },
-      { name: 'integration (git)', suite: 'git', launchArgs: [...sandbox, ...profile] },
+      {
+        name: 'integration (git)',
+        suite: 'git',
+        launchArgs: [...sandbox, ...profile],
+        developmentPath: extensionDevelopmentPath,
+      },
       // Checklist row B5 asks what happens when a repository is open: the
       // workspace must never list itself as an indexed project. The default
       // pass runs on an empty window and cannot see that at all. This repo's
@@ -102,6 +124,7 @@ async function main(): Promise<void> {
         name: 'integration (workspace)',
         suite: 'workspace',
         launchArgs: ['--disable-extensions', ...sandbox, ...profile, extensionDevelopmentPath],
+        developmentPath: extensionDevelopmentPath,
       },
     ]
 
@@ -119,6 +142,69 @@ async function main(): Promise<void> {
         name: 'integration (update)',
         suite: 'update',
         launchArgs: ['--disable-extensions', ...sandbox, ...profile],
+        developmentPath: extensionDevelopmentPath,
+      })
+    }
+
+    // Checklist row A1: the first start of an installed build. Its own launch,
+    // ordered last, because it is the one pass that must not carry
+    // `extensionDevelopmentPath` - and the one that must not carry
+    // `--disable-extensions` either, since the installed copy is an extension.
+    //
+    // Gated on the packaged artifact existing, and on the artifact whose name
+    // this manifest's version produces rather than on whatever `*.vsix` happens
+    // to be lying around: a stale package from an earlier version would install
+    // and pass while testing code nobody wrote today. Without a package the
+    // suite is left out entirely - the same shape the `update` suite uses -
+    // which keeps a bare `npm run test:integration` green, and which
+    // scripts/check-rows.mjs reports as a suite that answered nothing rather
+    // than as coverage.
+    const manifest = JSON.parse(
+      readFileSync(resolve(extensionDevelopmentPath, 'package.json'), 'utf8'),
+    ) as { name: string; version: string }
+    const vsix = resolve(extensionDevelopmentPath, `${manifest.name}-${manifest.version}.vsix`)
+
+    if (existsSync(vsix)) {
+      // Its own profile, never the one the other passes share: those launch
+      // with the development copy, and a second, installed copy of the same
+      // extension in their extensions directory would have both running at
+      // once.
+      const installedRoot = process.env.AUTOTEST_EXTENSIONS_DIR
+        ? `${process.env.AUTOTEST_EXTENSIONS_DIR}-installed`
+        : resolve(extensionDevelopmentPath, '.vscode-test/installed-profile')
+      const installedExtensions = resolve(installedRoot, 'extensions')
+      const installedUserData = resolve(installedRoot, 'user-data')
+      // Holds no manifest on purpose: it exists only so the host enters the
+      // extension development host, and an extension here would be a second,
+      // unpackaged copy of something under test.
+      const emptyDevelopmentPath = resolve(installedRoot, 'no-extension')
+      rmSync(installedRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+      mkdirSync(emptyDevelopmentPath, { recursive: true })
+
+      // `runVSCodeCommand` resolves bin/code.cmd and spawns it through a shell
+      // on Windows - Node refuses to spawn a batch file otherwise, and it fails
+      // as `status: null` with no error, which reads as an empty extensions
+      // directory rather than as a failed install. It quotes the executable but
+      // not the arguments, and a shell concatenates rather than escapes them,
+      // so every path containing a space has to be quoted here. This checkout
+      // lives under `D:\Hold\VS Code`, so that is every path.
+      const quote = (value: string): string => (process.platform === 'win32' ? `"${value}"` : value)
+      await runVSCodeCommand([
+        '--install-extension',
+        quote(vsix),
+        `--extensions-dir=${quote(installedExtensions)}`,
+        `--user-data-dir=${quote(installedUserData)}`,
+      ])
+
+      passes.push({
+        name: 'integration (installed)',
+        suite: 'installed',
+        launchArgs: [
+          ...sandbox,
+          `--extensions-dir=${installedExtensions}`,
+          `--user-data-dir=${installedUserData}`,
+        ],
+        developmentPath: emptyDevelopmentPath,
       })
     }
 
@@ -127,6 +213,17 @@ async function main(): Promise<void> {
     // at all - indistinguishable, to a reader or to the autotest harness, from
     // a suite that passed.
     let failed = false
+
+    // A suite left out of this run must not leave the previous run's verdict
+    // behind: scripts/check-rows.mjs reads these files directly, so a stale
+    // `installed` or `update` result would hand a row coverage from an
+    // invocation that never happened here.
+    for (const suite of ['default', 'git', 'workspace', 'update', 'installed']) {
+      if (passes.some((pass) => pass.suite === suite)) continue
+      rmSync(resolve(extensionDevelopmentPath, `.vscode-test/integration-result-${suite}.json`), {
+        force: true,
+      })
+    }
 
     for (const pass of passes) {
       // One result file per suite, so a later pass cannot overwrite the record
@@ -140,7 +237,7 @@ async function main(): Promise<void> {
       try {
         await runTests({
           vscodeExecutablePath: executable,
-          extensionDevelopmentPath,
+          extensionDevelopmentPath: pass.developmentPath,
           extensionTestsPath,
           launchArgs: pass.launchArgs,
           extensionTestsEnv: {

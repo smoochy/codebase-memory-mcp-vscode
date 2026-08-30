@@ -41,11 +41,12 @@ function collectTestFiles(dir: string): string[] {
 export async function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'bdd', color: false, timeout: 20_000 })
   // Each named directory holds the tests that need their own host: `git` needs
-  // the built-in git extension running, `workspace` needs a folder open. They
+  // the built-in git extension running, `workspace` needs a folder open,
+  // `installed` needs the packaged build rather than the checkout. They
   // are separate launches rather than part of the default one, so the default
   // pass keeps `--disable-extensions` and an empty window. Which set to run
   // comes from runTest.ts.
-  const namedSuites = ['git', 'workspace', 'update'] as const
+  const namedSuites = ['git', 'workspace', 'update', 'installed'] as const
   const suiteRoots = new Map(namedSuites.map((name) => [name, resolve(__dirname, `../${name}`)]))
   const suite = process.env.CBM_TEST_SUITE ?? 'default'
   const namedRoot = suiteRoots.get(suite as (typeof namedSuites)[number])

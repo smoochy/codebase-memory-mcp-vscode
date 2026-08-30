@@ -8,8 +8,9 @@
       "task": "Install the `.vsix` in a clean profile, open the panel",
       "expected": "Setup prompt appears, no error notification",
       "priority": "Blocking",
-      "status": "unrun",
-      "note": "Automatable as its own launch against an installed build, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there."
+      "status": "automated",
+      "test": "installed build first start activates a production installation without error",
+      "note": "Covered by its own launch against the packaged `.vsix`, never through the existing suite: `activate()` returns `{}` in production mode, so the test seams are empty there. The same suite also asserts the declared commands, the setting defaults and the MCP provider contribution; the named test is the one that proves the host is running an installed build at all."
     },
     {
       "section": "A",
