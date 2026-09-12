@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.4]
 
 - Clicking the CLI version number to copy the binary's folder put a POSIX-style path (`C:/Users/.../bin`) on the clipboard even on Windows, and the tooltip showed the same form - Explorer and native file dialogs reject that path over the forward slashes. `activePath` is kept with forward slashes internally on every platform so the binary locator can compare candidates cheaply, and nothing downstream converted it back before showing or copying it. Both the tooltip and the copy-folder command now go through one `displayPath` helper (`path.normalize`) before the path reaches a person, so Windows gets backslashes and other platforms are unaffected.
 
