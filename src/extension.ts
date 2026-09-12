@@ -27,7 +27,7 @@ import {
   userConfigRoot,
   withoutMcpEntry,
 } from './mcp/registration'
-import { folderName, formatBytes } from './panel/html'
+import { displayPath, folderName, formatBytes } from './panel/html'
 import { PanelProvider } from './panel/provider'
 import { wizardStepTitle, wizardSteps } from './setup/wizard'
 import { advanceIndexRecord, type IndexRecord } from './state/indexRecord'
@@ -1065,7 +1065,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       }
       // The folder, not the binary: this is for pasting into a terminal or a
       // PATH entry, where the executable name is in the way.
-      const folder = dirname(active)
+      const folder = dirname(displayPath(active))
       // A bare path is not automatically safe to paste: a line break in it
       // submits the trailing segment as its own command. Same rule as the
       // uninstall command, for the same reason.

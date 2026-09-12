@@ -1,3 +1,4 @@
+import { normalize } from 'node:path'
 import { releaseNotesUrlOrNull, upstreamRepoUrl } from '../binary/assets'
 import {
   daemonStopCommandFor,
@@ -278,6 +279,21 @@ function statusChip(state: ExtensionState): string {
 }
 
 /**
+ * `activePath` is kept with forward slashes internally, on every platform, so
+ * the binary locator can compare candidates without caring which one found
+ * them (see `binary/locate.ts`). Nothing that shows the path to a person, or
+ * puts it somewhere a person will paste it, may use that form directly - on
+ * Windows `C:/Users/...` is rejected by Explorer and file dialogs, which only
+ * accept backslashes. `normalize` is platform-aware: it rewrites separators
+ * to the host's own on Windows and is a no-op elsewhere. Both the tooltip and
+ * the copy-folder command below go through this one function so neither can
+ * drift from the other again.
+ */
+export function displayPath(activePath: string): string {
+  return normalize(activePath)
+}
+
+/**
  * The two versions in the sub-title: the CLI's, then this extension's.
  *
  * The CLI version carries the binary's path as its tooltip. That is the only
@@ -288,7 +304,7 @@ function subVersions(model: PanelModel): string {
   const parts: string[] = []
 
   if (model.version !== null) {
-    const path = model.state.activePath
+    const path = model.state.activePath === null ? null : displayPath(model.state.activePath)
     const hint =
       path === null
         ? 'Path unknown'

@@ -1,7 +1,9 @@
 import * as assert from 'node:assert/strict'
+import { dirname, sep } from 'node:path'
 import type { ProjectSummary } from '../../src/cli/client'
 import {
   contentSecurityPolicy,
+  displayPath,
   escapeHtml,
   formatBytes,
   formatCount,
@@ -88,6 +90,23 @@ describe('formatBytes', () => {
 
   it('stops at the largest unit rather than running off the end of the table', () => {
     assert.match(formatBytes(5 * 1024 ** 5), /TB$/)
+  })
+})
+
+describe('displayPath', () => {
+  // activePath is stored with forward slashes on every platform, including
+  // Windows (see binary/locate.ts), so the locator can compare candidates
+  // without caring which one found them. On Windows that form is exactly what
+  // Explorer and native file dialogs reject when a person pastes it - the bug
+  // this guards against copied `C:/Users/.../bin` from the panel's version
+  // button and Explorer refused it.
+  it("rewrites the platform's own separators, whatever the source used", () => {
+    const native = displayPath('C:/Users/Administrator/.local/bin/cmm.exe')
+    assert.ok(!native.includes(sep === '\\' ? '/' : '\\'), `expected only "${sep}" in ${native}`)
+    // The regression itself: the folder handed to the clipboard must be one
+    // this platform's file picker accepts, not whatever separator the
+    // internal representation happened to carry.
+    assert.equal(dirname(native), displayPath('C:/Users/Administrator/.local/bin'))
   })
 })
 
@@ -376,7 +395,11 @@ describe('renderBody', () => {
     })
     const html = renderBody(model({ state }), 'n1')
     assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
-    assert.match(html, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+    // The tooltip runs activePath through displayPath first (see the
+    // POSIX-path-on-Windows fix), which on Windows turns the payload's "/"
+    // into "\" before escaping ever sees it - so the expectation is built the
+    // same way rather than hardcoding a separator that only holds on POSIX.
+    assert.ok(html.includes(escapeHtml(displayPath(XSS_PAYLOAD))))
   })
 
   it('escapes a hostile state.notice (fallback message can embed a path)', () => {
