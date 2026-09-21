@@ -159,6 +159,7 @@ describe('CliClient', () => {
       'cli',
       'list_projects',
       '--include-details=true',
+      '--format=json',
       '--json',
     ])
   })

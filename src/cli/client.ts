@@ -166,6 +166,11 @@ export class CliClient {
       'cli',
       'list_projects',
       '--include-details=true',
+      // `--format=json` is not optional either: CLI 0.11.0 made `tree` the
+      // default, so the envelope's text is a rendered table rather than a
+      // payload. Every refresh then failed to parse and the panel showed no
+      // projects at all, including ones that had just been added by hand.
+      '--format=json',
       '--json',
     ])
     if (!result.ok) {

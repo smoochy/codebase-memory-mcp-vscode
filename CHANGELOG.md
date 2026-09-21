@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.5]
+
+- The panel showed no projects at all against CLI 0.11.0, and a project added by hand did not appear either, although the index held every one of them. 0.11.0 gave `list_projects` a `--format` flag and made `tree` its default, so the MCP envelope's text carried a rendered table instead of the JSON payload; the parser correctly refused it as non-JSON and every refresh ended in "listing projects failed". `listProjects` now asks for `--format=json` explicitly, so the payload arrives as a payload again. The other tools the extension calls, `index_repository` and `delete_project`, still return JSON without a format flag and are unaffected.
+
 ## [1.1.4]
 
 - Clicking the CLI version number to copy the binary's folder put a POSIX-style path (`C:/Users/.../bin`) on the clipboard even on Windows, and the tooltip showed the same form - Explorer and native file dialogs reject that path over the forward slashes. `activePath` is kept with forward slashes internally on every platform so the binary locator can compare candidates cheaply, and nothing downstream converted it back before showing or copying it. Both the tooltip and the copy-folder command now go through one `displayPath` helper (`path.normalize`) before the path reaches a person, so Windows gets backslashes and other platforms are unaffected.
