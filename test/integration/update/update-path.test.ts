@@ -25,8 +25,8 @@ const EXTENSION_ID = 'smoochy.better-codebase-memory-mcp'
  * current build afterwards, so a repeated `npm run test:integration` against a
  * hand-provisioned fixture still starts from a sane installation.
  *
- * Four facts cost a failed probe run each (see the resolution of
- * smoochy/homelab-private#1943) and are honoured here:
+ * Four facts cost a failed probe run each (see the resolution of a past
+ * probe-run issue, tracked internally) and are honoured here:
  *
  * - The developer's own CLI on `PATH` resolves as an external install and
  *   `refuseIfExternal` then blocks the update outright. `runTest.ts` filters
