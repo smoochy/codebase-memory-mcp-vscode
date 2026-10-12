@@ -1,0 +1,213 @@
+# managed centrally - do not edit manually
+name: security-gate
+
+# Release security gate. The check `security-gate` reports on every pull request and ends green at once unless the
+# version in package.json rises against the base branch (a release PR). On a release PR one claude-code-action run
+# reviews the changes since the newest v* tag with /appsec and /security-review. A failing verdict makes the `fix`
+# job push up to 2 fix commits with GATE_PUSH_TOKEN (not GITHUB_TOKEN, so the push re-triggers this workflow); after
+# that the `escalate` job opens a labelled issue and notifies through the optional NTFY_URL secret. If the gate itself
+# cannot run (quota, outage, timeout, no secrets) the check fails and the release PR stays blocked.
+# claude-code-action only runs a workflow file identical to the one on the default branch.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  MANIFEST: "package.json"
+  MAX_FIX_ROUNDS: 2
+  SCHEMA: >-
+    {"type":"object","required":["verdict","findings"],"properties":{"verdict":{"enum":["pass","fail"]},"findings":{"type":"array","items":{"type":"object","required":["severity","title","file","detail"],"properties":{"severity":{"enum":["CRITICAL","HIGH","MEDIUM","LOW","INFO"]},"title":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"},"detail":{"type":"string"},"fix":{"type":"string"}}}}}}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read versions
+        id: versions
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base=$(git show "origin/$BASE_REF:$MANIFEST" 2>/dev/null | jq -r '.version // empty' || true)
+          head=$(jq -r '.version // empty' "$MANIFEST")
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+
+      - name: Decide
+        id: decide
+        shell: python
+        env:
+          BASE_VERSION: ${{ steps.versions.outputs.base }}
+          HEAD_VERSION: ${{ steps.versions.outputs.head }}
+        run: |
+          import os, re
+
+          def key(v):
+              m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?", v)
+              if not m:
+                  raise SystemExit(f"not a semantic version: {v!r}")
+              pre = m.group(4)
+              idents = [(0, int(i), "") if i.isdigit() else (1, 0, i) for i in pre.split(".")] if pre else []
+              return (tuple(int(x) for x in m.groups()[:3]), pre is None, idents)
+
+          base, head = os.environ["BASE_VERSION"], os.environ["HEAD_VERSION"]
+          release = bool(base) and key(head) > key(base)
+          print(f"base={base!r} head={head!r} release={release}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"release={str(release).lower()}\n")
+
+  review:
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    outputs:
+      blocking: ${{ steps.verdict.outputs.blocking }}
+      rounds: ${{ steps.verdict.outputs.rounds }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Diff base (last release tag)
+        id: base
+        run: |
+          tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          echo "tag=${tag:-none}" >> "$GITHUB_OUTPUT"
+
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Security gate for a release. Run the two review commands, /appsec and /security-review (read
+            .claude/commands/appsec.md and .claude/commands/security-review.md and follow them), over the changes
+            since the last release tag `${{ steps.base.outputs.tag }}` (`git diff ${{ steps.base.outputs.tag }}...HEAD`;
+            if the tag is `none`, review the whole tree). Review the diff and the code it touches, not the whole repo.
+            Do not modify any file. Reply only with the structured result: verdict is "fail" when any finding is
+            HIGH or CRITICAL, otherwise "pass"; list every finding with its severity.
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+            --json-schema '${{ env.SCHEMA }}'
+
+      - name: Verdict and cost
+        id: verdict
+        env:
+          OUT: ${{ steps.claude.outputs.structured_output }}
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          echo "$OUT" | jq -e '.verdict' > /dev/null
+          blocking=$(echo "$OUT" | jq '[.findings[] | select(.severity=="HIGH" or .severity=="CRITICAL")] | length')
+          rounds=$(git log --format=%s "origin/$BASE_REF..HEAD" | grep -c '^security-gate fix' || true)
+          cost=$(jq -r '[.[] | select(.type=="result")] | last | .total_cost_usd // "unknown"' "$EXEC")
+          echo "blocking=$blocking" >> "$GITHUB_OUTPUT"
+          echo "rounds=$rounds" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Security gate"
+            echo "Blocking (HIGH/CRITICAL): $blocking. Fix rounds used: $rounds of $MAX_FIX_ROUNDS. total_cost_usd: $cost. Diff base: ${{ steps.base.outputs.tag }}."
+            echo '```json'; echo "$OUT" | jq .; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$OUT" > findings.json
+          [ "$blocking" -eq 0 ]
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-gate-findings
+          path: findings.json
+          if-no-files-found: ignore
+
+  fix:
+    needs: review
+    # Same-repo head only: a fork PR has no secrets, and the job pushes with a write token and runs the repo's tests.
+    if: failure() && needs.review.outputs.blocking != '0' && needs.review.outputs.blocking != '' && fromJSON(needs.review.outputs.rounds) < 2 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GATE_PUSH_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: security-gate-findings
+      - name: Install dependencies
+        run: npm ci
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Fix every HIGH and CRITICAL finding in findings.json with the smallest change, then run `npm run test:unit`.
+            Do not commit findings.json. Do not touch .github/workflows.
+          claude_args: --max-turns 40 --allowedTools "Read,Edit,Write,Grep,Glob,Bash(npm run test:unit:*),Bash(git diff:*)"
+      - name: Push fix commit
+        run: |
+          rm -f findings.json
+          git config user.name "security-gate"
+          git config user.email "security-gate@users.noreply.github.com"
+          git add -A
+          git commit -m "security-gate fix" -m "Automated fix for HIGH/CRITICAL findings."
+          git push
+
+  escalate:
+    needs: review
+    if: failure() && needs.review.outputs.blocking != '0' && needs.review.outputs.blocking != '' && fromJSON(needs.review.outputs.rounds) >= 2
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open issue and notify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create security-gate -R "$GITHUB_REPOSITORY" --force
+          gh issue create -R "$GITHUB_REPOSITORY" --label security-gate \
+            --title "Security gate blocked a release after $MAX_FIX_ROUNDS fix rounds" \
+            --body "HIGH or CRITICAL findings remain. See $RUN (findings in the job summary and the security-gate-findings artifact)."
+          if [ -n "$NTFY_URL" ]; then curl -fsS -d "Security gate blocked a release: $RUN" "$NTFY_URL"; fi
+
+  # The one job that reports the required check. Green at once for a non-release PR; red when detection or the
+  # review did not succeed (fail closed), including every case where the review job was cancelled, skipped by an
+  # outage or timed out.
+  security-gate:
+    needs: [detect, review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the gate
+        env:
+          DETECT: ${{ needs.detect.result }}
+          RELEASE: ${{ needs.detect.outputs.release }}
+          REVIEW: ${{ needs.review.result }}
+        run: |
+          [ "$DETECT" = success ] || { echo "release detection: $DETECT"; exit 1; }
+          if [ "$RELEASE" != true ]; then echo "not a release PR"; exit 0; fi
+          [ "$REVIEW" = success ] || { echo "security review: $REVIEW"; exit 1; }
+          echo "security review passed"
