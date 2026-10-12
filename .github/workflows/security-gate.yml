@@ -94,6 +94,25 @@ jobs:
           tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
           echo "tag=${tag:-none}" >> "$GITHUB_OUTPUT"
 
+      # Fails before claude-code-action runs, so an oversized diff spends no quota. Fail closed; the admin bypass is the
+      # way through. Without a tag the whole tree is counted against the empty tree.
+      - name: Size check
+        env:
+          TAG: ${{ steps.base.outputs.tag }}
+          MAX_CHANGED_LINES: "5000"
+        run: |
+          if [ "$TAG" = none ]; then
+            changed=$(git diff --shortstat "$(git hash-object -t tree /dev/null)" HEAD)
+          else
+            changed=$(git diff --shortstat "$TAG...HEAD")
+          fi
+          lines=$(echo "$changed" | grep -oE '[0-9]+ (insertion|deletion)' | awk '{s+=$1} END{print s+0}')
+          echo "Changed lines (insertions + deletions): $lines. Threshold: $MAX_CHANGED_LINES. Diff base: $TAG."
+          if [ "$lines" -gt "$MAX_CHANGED_LINES" ]; then
+            echo "::error::Diff since $TAG has $lines changed lines, over the threshold of $MAX_CHANGED_LINES. The review was not run; merge with the admin bypass or split the release."
+            exit 1
+          fi
+
       - id: claude
         uses: anthropics/claude-code-action@v1
         with:
