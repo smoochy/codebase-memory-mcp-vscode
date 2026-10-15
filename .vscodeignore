@@ -1,6 +1,7 @@
 .vscode/**
 .worktrees/**
 .superpowers/**
+.claude/**
 node_modules/**
 out/**
 src/**
