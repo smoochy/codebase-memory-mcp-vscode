@@ -33,7 +33,7 @@ jobs:
     outputs:
       release: ${{ steps.decide.outputs.release }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -83,7 +83,7 @@ jobs:
       blocking: ${{ steps.verdict.outputs.blocking }}
       rounds: ${{ steps.verdict.outputs.rounds }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -150,7 +150,7 @@ jobs:
           echo "$OUT" > findings.json
           [ "$blocking" -eq 0 ]
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-gate-findings
@@ -167,12 +167,12 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GATE_PUSH_TOKEN }}
           fetch-depth: 0
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           name: security-gate-findings
       - name: Install dependencies
