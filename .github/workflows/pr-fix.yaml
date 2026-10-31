@@ -1,0 +1,40 @@
+# managed centrally - do not edit manually
+# Template for .github/workflows/pr-fix.yaml, pushed by the baseline run into the repos of pr-fix-repos.txt (homelab-private#5433, #5445).
+# The page dispatches this on the default branch with the PR number, the fix kind and the PR branch. The page writes no code itself.
+name: pr-fix
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number"
+        required: true
+      kind:
+        description: "conflict or check"
+        required: true
+      branch:
+        description: "PR head branch"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Pull request #${{ inputs.pr }} on branch ${{ inputs.branch }}, fix kind: ${{ inputs.kind }}.
+            conflict: merge the default branch into this branch. Trace each side of every hunk back to why it was made, keep both intents, pick a side only where they are incompatible. Never abort the merge. Run the project's checks, fix what the merge broke, commit and push.
+            check: read the failing check's log with gh, find the root cause, fix it once in the shared code, commit and push.
+            Never force-push. Push only to this branch.
+          claude_args: --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
