@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.6]
+
+- chore(deps-dev): bump serialize-javascript from 7.1.2 to 7.1.4
+
 ## [1.1.5]
 
 - The panel showed no projects at all against CLI 0.11.0, and a project added by hand did not appear either, although the index held every one of them. 0.11.0 gave `list_projects` a `--format` flag and made `tree` its default, so the MCP envelope's text carried a rendered table instead of the JSON payload; the parser correctly refused it as non-JSON and every refresh ended in "listing projects failed". `listProjects` now asks for `--format=json` explicitly, so the payload arrives as a payload again. The other tools the extension calls, `index_repository` and `delete_project`, still return JSON without a format flag and are unaffected.
